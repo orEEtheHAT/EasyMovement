@@ -40,9 +40,30 @@
           "id": "d7c43899-3b45-4c85-affa-69c630271e5c",
           "expectedControlType": "Button",
           "initialStateCheck": false
+        },
+        {
+          "name": "ToggleNoclip",
+          "type": "Button",
+          "id": "2c48c791-f027-4524-a8d1-a486a63b189d",
+          "expectedControlType": "Button",
+          "initialStateCheck": false
         }
       ],
       "bindings": [
+        {
+          "name": "",
+          "id": "c2478b1c-091b-4773-b155-79aa7426ff44",
+          "path": "<Keyboard>/f8",
+          "action": "ToggleNoclip",
+          "groups": "Keyboard&Mouse"
+        },
+        {
+          "name": "",
+          "id": "d24a85c8-cd74-4fb5-89fb-83e365edae15",
+          "path": "<Gamepad>/rightStickPress",
+          "action": "ToggleNoclip",
+          "groups": "Gamepad"
+        },
         {
           "name": "",
           "id": "c74059b4-5afd-47c8-90db-c91915ac9c94",

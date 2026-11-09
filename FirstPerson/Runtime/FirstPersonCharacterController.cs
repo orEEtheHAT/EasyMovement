@@ -3,6 +3,7 @@ using EasyFootsteps;
 using ECM2;
 using Unity.Cinemachine;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace EasyMovement.FirstPerson
 {
@@ -19,11 +20,11 @@ namespace EasyMovement.FirstPerson
 
         private enum Gait { Walk, Sprint, Crouch, Custom }
         [Header("View")]
-        public GameObject cameraTarget;
+        [FormerlySerializedAs("cameraTarget")]
+        [SerializeField, Tooltip("Eye-height pivot followed by the Cinemachine views. Pitch rotates this pivot.")] private GameObject lookPivot;
         public CinemachineCamera defaultCamera;
         public CinemachineCamera crouchedCamera;
         public CinemachineCamera sprintCamera;
-        [SerializeField] private bool lockCursorOnStart = true;
 
         [SerializeField] private bool allowSprint = true;
         [SerializeField, Min(0f)] private float _maxSprintSpeed = 8f;
@@ -35,6 +36,14 @@ namespace EasyMovement.FirstPerson
         [SerializeField] private CustomState[] customStates = Array.Empty<CustomState>();
         [Tooltip("Distance below the pivot to search if ECM2 has no ground collider for an external step.")]
         [SerializeField, Min(0f)] private float groundProbeDepth = 2f;
+
+        [SerializeField] private bool allowNoclip = true;
+        [SerializeField, Min(1f)] private float noclipBoostMultiplier = 3f;
+        private MovementMode modeBeforeNoclip;
+        private int customModeBeforeNoclip;
+        private bool collisionsBeforeNoclip, constraintBeforeNoclip;
+        private Vector3 noclipEntryPosition;
+        public bool IsNoclipActive { get; private set; }
 
         private bool sprintRequested;
         private bool sprinting;
@@ -54,7 +63,95 @@ namespace EasyMovement.FirstPerson
             }
         }
 
-        public string ActiveStateId => GetGroundedStateId();
+        public string ActiveStateId => IsNoclipActive ? "NoClip" : GetGroundedStateId();
+
+        public void ToggleNoclip() => TrySetNoclip(!IsNoclipActive);
+
+        public bool TrySetNoclip(bool active)
+        {
+            if (active == IsNoclipActive) return true;
+            if (!isActiveAndEnabled || !characterMovement || !characterMovement.enabled) return false;
+
+            if (!active)
+            {
+                if (NoclipExitBlocked()) return false;
+                ExitNoclip();
+                return true;
+            }
+            if (!allowNoclip || IsPaused()) return false;
+
+            modeBeforeNoclip = GetMovementMode();
+            customModeBeforeNoclip = GetCustomMovementMode();
+            collisionsBeforeNoclip = characterMovement.detectCollisions;
+            constraintBeforeNoclip = characterMovement.constrainToGround;
+            noclipEntryPosition = GetPosition();
+            StopJumping();
+            UnCrouch();
+            sprinting = false;
+            SetMovementDirection(Vector3.zero);
+            SetVelocity(Vector3.zero);
+            characterMovement.ClearAccumulatedForces();
+            IsNoclipActive = true;
+            characterMovement.detectCollisions = false;
+            SetMovementMode(MovementMode.Flying);
+            characterMovement.constrainToGround = false;
+            UpdateView();
+            return true;
+        }
+
+        private bool NoclipExitBlocked()
+        {
+            if (!collisionsBeforeNoclip) return false;
+            characterMovement.OverlapTest(characterMovement.collisionLayers, QueryTriggerInteraction.Ignore, out int count);
+            return count > 0;
+        }
+
+        private void ExitNoclip()
+        {
+            IsNoclipActive = false;
+            SetMovementDirection(Vector3.zero);
+            SetVelocity(Vector3.zero);
+            characterMovement.ClearAccumulatedForces();
+            characterMovement.detectCollisions = collisionsBeforeNoclip;
+            var mode = modeBeforeNoclip;
+            if (mode == MovementMode.Walking || mode == MovementMode.Falling || mode == MovementMode.Swimming)
+                mode = IsInWaterPhysicsVolume() ? MovementMode.Swimming : MovementMode.Falling;
+            SetMovementMode(mode, customModeBeforeNoclip);
+            if (mode == modeBeforeNoclip ||
+                (mode == MovementMode.Falling && modeBeforeNoclip == MovementMode.Walking))
+                characterMovement.constrainToGround = constraintBeforeNoclip;
+            if (mode == MovementMode.Falling && collisionsBeforeNoclip)
+            {
+                characterMovement.SetPosition(GetPosition(), updateGround: true);
+                if (IsGrounded()) SetMovementMode(MovementMode.Walking);
+            }
+            UpdateView();
+        }
+
+        protected override void FlyingMovementMode(float deltaTime)
+        {
+            if (IsNoclipActive)
+                SetVelocity(Vector3.ClampMagnitude(GetMovementDirection(), 1f) * GetMaxSpeed());
+            else
+                base.FlyingMovementMode(deltaTime);
+        }
+
+        public Transform LookPivot
+        {
+            get => lookPivot ? lookPivot.transform : null;
+            set
+            {
+                lookPivot = value ? value.gameObject : null;
+                if (value) pitch = -Mathf.DeltaAngle(0f, value.localEulerAngles.x);
+            }
+        }
+
+        [Obsolete("Use LookPivot instead.")]
+        public GameObject cameraTarget
+        {
+            get => lookPivot;
+            set => LookPivot = value ? value.transform : null;
+        }
 
         private CustomState FindCustomState(string id)
         {
@@ -96,12 +193,16 @@ namespace EasyMovement.FirstPerson
         public void Sprint() => sprintRequested = true;
         public void StopSprinting() => sprintRequested = false;
 
-        public override float GetMaxSpeed() => CurrentGait switch
+        public override float GetMaxSpeed()
         {
-            Gait.Custom => requestedState.maxSpeed,
-            Gait.Sprint => MaxSprintSpeed,
-            _ => base.GetMaxSpeed()
-        };
+            if (IsNoclipActive) return maxFlySpeed * (sprintRequested ? noclipBoostMultiplier : 1f);
+            return CurrentGait switch
+            {
+                Gait.Custom => requestedState.maxSpeed,
+                Gait.Sprint => MaxSprintSpeed,
+                _ => base.GetMaxSpeed()
+            };
+        }
 
         protected virtual string GetGroundedStateId()
         {
@@ -117,7 +218,7 @@ namespace EasyMovement.FirstPerson
         public bool TryGetGroundedMotion(out FootstepMotion motion)
         {
             motion = default;
-            if (!isActiveAndEnabled || !characterMovement || !IsWalking() || !IsGrounded()) return false;
+            if (IsNoclipActive || !isActiveAndEnabled || !characterMovement || !IsWalking() || !IsGrounded()) return false;
 
             float speed = Vector3.ProjectOnPlane(GetVelocity(), GetUpVector()).magnitude;
             motion = new FootstepMotion(speed, GetMaxSpeed(), GetGroundedStateId(), characterMovement.groundCollider);
@@ -137,25 +238,25 @@ namespace EasyMovement.FirstPerson
 
         public void AddControlPitchInput(float degrees, float minimum = -80f, float maximum = 80f)
         {
-            if (!cameraTarget || degrees == 0f) return;
+            if (!lookPivot || degrees == 0f) return;
             pitch = Mathf.Clamp(pitch + degrees, minimum, maximum);
-            cameraTarget.transform.localRotation = Quaternion.AngleAxis(-pitch, Vector3.right);
+            LookPivot.localRotation = Quaternion.AngleAxis(-pitch, Vector3.right);
         }
 
         protected override void Start()
         {
             base.Start();
-            if (!camera) camera = Camera.main;
-            if (cameraTarget)
-                pitch = -Mathf.DeltaAngle(0f, cameraTarget.transform.localEulerAngles.x);
+            if (lookPivot)
+                pitch = -Mathf.DeltaAngle(0f, LookPivot.localEulerAngles.x);
             SetRotationMode(RotationMode.None);
             UpdateView();
-            if (lockCursorOnStart) Cursor.lockState = CursorLockMode.Locked;
         }
 
         protected override void OnBeforeSimulationUpdate(float deltaTime)
         {
             base.OnBeforeSimulationUpdate(deltaTime);
+            if (IsNoclipActive && !allowNoclip) TrySetNoclip(false);
+            if (IsNoclipActive && !IsFlying()) SetMovementMode(MovementMode.Flying);
             if (refreshSettings)
             {
                 refreshSettings = false;
@@ -196,6 +297,12 @@ namespace EasyMovement.FirstPerson
 
         protected override void OnDisable()
         {
+            if (IsNoclipActive && characterMovement)
+            {
+                // A disabled motor cannot keep flying out of a wall. Restore a valid position before enabling collisions.
+                if (NoclipExitBlocked()) characterMovement.SetPosition(noclipEntryPosition);
+                ExitNoclip();
+            }
             base.OnDisable();
             sprintRequested = false;
             sprinting = false;

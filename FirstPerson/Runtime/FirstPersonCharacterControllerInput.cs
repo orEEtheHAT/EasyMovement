@@ -19,7 +19,7 @@ namespace EasyMovement.FirstPerson
         public float minPitch = -80f;
         public float maxPitch = 80f;
 
-        private InputAction move, look, jump, crouch, sprint;
+        private InputAction move, look, jump, crouch, sprint, toggleNoclip;
         private readonly List<InputAction> enabledHere = new List<InputAction>(5);
         private bool holdingJump, holdingCrouch, holdingSprint;
 
@@ -55,6 +55,12 @@ namespace EasyMovement.FirstPerson
             jump = map.FindAction("Jump");
             crouch = map.FindAction("Crouch");
             sprint = map.FindAction("Sprint");
+            toggleNoclip = map.FindAction("ToggleNoclip");
+            if (toggleNoclip != null)
+            {
+                toggleNoclip.performed += OnNoclipToggle;
+                EnableIfNeeded(toggleNoclip);
+            }
             Listen(jump);
             Listen(crouch);
             Listen(sprint);
@@ -89,6 +95,7 @@ namespace EasyMovement.FirstPerson
             Unlisten(jump);
             Unlisten(crouch);
             Unlisten(sprint);
+            if (toggleNoclip != null) toggleNoclip.performed -= OnNoclipToggle;
             foreach (var action in enabledHere) action.Disable();
             enabledHere.Clear();
             if (_character)
@@ -99,7 +106,12 @@ namespace EasyMovement.FirstPerson
                 _character.SetMovementDirection(Vector3.zero);
             }
             holdingJump = holdingCrouch = holdingSprint = false;
-            move = look = jump = crouch = sprint = null;
+            move = look = jump = crouch = sprint = toggleNoclip = null;
+        }
+
+        private void OnNoclipToggle(InputAction.CallbackContext context)
+        {
+            if (_character && _character.isActiveAndEnabled) _character.ToggleNoclip();
         }
 
         private void OnButton(InputAction.CallbackContext context)
@@ -108,12 +120,14 @@ namespace EasyMovement.FirstPerson
             bool pressed = context.started;
             if (context.action == jump)
             {
-                holdingJump = pressed;
+                holdingJump = pressed && !_character.IsNoclipActive;
+                if (_character.IsNoclipActive) return;
                 if (pressed) _character.Jump(); else _character.StopJumping();
             }
             else if (context.action == crouch)
             {
-                holdingCrouch = pressed;
+                holdingCrouch = pressed && !_character.IsNoclipActive;
+                if (_character.IsNoclipActive) return;
                 if (pressed) _character.Crouch(); else _character.UnCrouch();
             }
             else if (context.action == sprint)
@@ -129,14 +143,6 @@ namespace EasyMovement.FirstPerson
         {
             if (!_character || !_character.isActiveAndEnabled) return;
             Vector2 axes = move?.ReadValue<Vector2>() ?? Vector2.zero;
-            Vector3 up = _character.GetUpVector();
-            Transform view = _character.cameraTransform;
-            Vector3 forward = Vector3.ProjectOnPlane(view ? view.forward : _character.transform.forward, up);
-            if (forward.sqrMagnitude < 0.0001f && view)
-                forward = Vector3.ProjectOnPlane(view.up, up);
-            forward.Normalize();
-            _character.SetMovementDirection(forward * axes.y + Vector3.Cross(up, forward) * axes.x);
-
             Vector2 delta = GetLookInput();
             if (look?.activeControl?.device is Gamepad)
                 delta *= gamepadLookSpeed * Time.deltaTime;
@@ -144,6 +150,18 @@ namespace EasyMovement.FirstPerson
                 delta = Vector2.Scale(delta, sensitivity);
             _character.AddControlYawInput(delta.x);
             _character.AddControlPitchInput(invertLook ? delta.y : -delta.y, minPitch, maxPitch);
+
+            Transform body = _character.transform;
+            if (_character.IsNoclipActive)
+            {
+                Transform aim = _character.LookPivot ? _character.LookPivot : body;
+                float vertical = (jump?.IsPressed() == true ? 1f : 0f) - (crouch?.IsPressed() == true ? 1f : 0f);
+                _character.SetMovementDirection(body.right * axes.x + aim.forward * axes.y + body.up * vertical);
+            }
+            else
+            {
+                _character.SetMovementDirection(body.TransformDirection(new Vector3(axes.x, 0f, axes.y)));
+            }
         }
     }
 }

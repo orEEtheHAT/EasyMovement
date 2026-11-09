@@ -12,17 +12,15 @@ namespace EasyMovement.FirstPerson.Editor
         private static readonly string[] ShownFields =
         {
             "m_Script", "_maxWalkSpeed", "_maxWalkSpeedCrouched", "_canEverCrouch", "_camera",
-            "cameraTarget", "defaultCamera", "crouchedCamera", "sprintCamera", "lockCursorOnStart",
+            "lookPivot", "defaultCamera", "crouchedCamera", "sprintCamera",
             "allowSprint", "_maxSprintSpeed", "_minSprintInput", "walkState", "sprintState",
-            "crouchState", "customStates", "groundProbeDepth"
+            "crouchState", "customStates", "groundProbeDepth", "allowNoclip", "_maxFlySpeed", "noclipBoostMultiplier"
         };
 
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
-            Field("cameraTarget", "Look Target");
-            Field("_camera", "Output Camera");
-            Field("lockCursorOnStart", "Lock Cursor on Start");
+            DrawLookPivot();
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Movement States", EditorStyles.boldLabel);
 
@@ -53,6 +51,16 @@ namespace EasyMovement.FirstPerson.Editor
                 }
             }
 
+            EditorGUILayout.Space();
+            bool noclipAllowed = Toggle("allowNoclip", "Allow NoClip");
+            if (noclipAllowed)
+            {
+                EditorGUI.indentLevel++;
+                Field("_maxFlySpeed", "Flight Speed (m/s)");
+                Field("noclipBoostMultiplier", "Boost Multiplier");
+                EditorGUI.indentLevel--;
+            }
+
             if (Application.isPlaying)
             {
                 var player = (FirstPersonCharacterController)target;
@@ -74,6 +82,7 @@ namespace EasyMovement.FirstPerson.Editor
             showMotor = EditorGUILayout.Foldout(showMotor, "ECM2 Motor and Ground Settings", true);
             if (showMotor)
             {
+                if (!noclipAllowed) Field("_maxFlySpeed", "ECM2 Flight Speed (m/s)");
                 Field("groundProbeDepth", "Footstep Ground Probe Depth");
                 DrawPropertiesExcluding(serializedObject, ShownFields);
             }
@@ -87,6 +96,18 @@ namespace EasyMovement.FirstPerson.Editor
             Field(view, "Camera");
             Field(steps, "Step State");
             EditorGUI.indentLevel--;
+        }
+
+        private void DrawLookPivot()
+        {
+            var pivot = serializedObject.FindProperty("lookPivot");
+            var current = pivot.objectReferenceValue as GameObject;
+            var rect = EditorGUILayout.GetControlRect();
+            var label = EditorGUI.BeginProperty(rect, new GUIContent("Look Pivot", pivot.tooltip), pivot);
+            EditorGUI.BeginChangeCheck();
+            var selected = (Transform)EditorGUI.ObjectField(rect, label, current ? current.transform : null, typeof(Transform), true);
+            if (EditorGUI.EndChangeCheck()) pivot.objectReferenceValue = selected ? selected.gameObject : null;
+            EditorGUI.EndProperty();
         }
 
         private bool Toggle(string path, string label)
