@@ -9,13 +9,21 @@ namespace EasyFootsteps
         public readonly float MaxSpeed;
         public readonly CharacterStepController.MovementMode Mode;
         public readonly Collider Ground;
+        public readonly string StateId;
 
         public FootstepMotion(float planarSpeed, float maxSpeed, CharacterStepController.MovementMode mode, Collider ground)
         {
             PlanarSpeed = planarSpeed;
             MaxSpeed = maxSpeed;
+            StateId = FootstepState.IdFor(mode);
             Mode = mode;
             Ground = ground;
+        }
+
+        public FootstepMotion(float planarSpeed, float maxSpeed, string stateId, Collider ground)
+            : this(planarSpeed, maxSpeed, FootstepState.LegacyMode(stateId), ground)
+        {
+            StateId = stateId;
         }
     }
 

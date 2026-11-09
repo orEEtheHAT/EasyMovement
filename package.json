@@ -1,6 +1,6 @@
 {
   "name": "com.oreethehat.easy-footsteps",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "EasyFootsteps",
   "description": "Distance- and event-driven footsteps with surface feedback and optional head bob.",
   "unity": "6000.3",

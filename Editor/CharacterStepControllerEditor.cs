@@ -1,4 +1,7 @@
+using System;
+using System.Collections.Generic;
 using UnityEditor;
+using UnityEditorInternal;
 using UnityEngine;
 
 namespace EasyFootsteps.Editor
@@ -6,119 +9,115 @@ namespace EasyFootsteps.Editor
     [CustomEditor(typeof(CharacterStepController))]
     public sealed class CharacterStepControllerEditor : UnityEditor.Editor
     {
-        private SerializedProperty _motionSource;
-        private SerializedProperty _stepSourceMode;
-        private SerializedProperty _validateExternalSteps;
-        private SerializedProperty _minMoveSpeed;
-        private SerializedProperty _walkStepDistance;
-        private SerializedProperty _sprintStepDistance;
-        private SerializedProperty _crouchStepDistance;
-        private SerializedProperty _startStepPhase;
-        private SerializedProperty _enableHeadBob;
-        private SerializedProperty _headBobTarget;
-        private SerializedProperty _headBobHorizontalCurve;
-        private SerializedProperty _headBobVerticalCurve;
-        private SerializedProperty _headBobHorizontalAmplitude;
-        private SerializedProperty _headBobVerticalAmplitude;
-        private SerializedProperty _headBobCrouchMultiplier;
-        private SerializedProperty _headBobSprintAmplitudeMultiplier;
-        private SerializedProperty _headBobStepImpactAmplitude;
-        private SerializedProperty _headBobStepImpactDecaySpeed;
-        private SerializedProperty _headBobBlendInSpeed;
-        private SerializedProperty _headBobBlendOutSpeed;
-        private SerializedProperty _headBobPositionSmoothTime;
-        private SerializedProperty _enableStepFeedback;
-        private SerializedProperty _defaultFeedback;
-        private SerializedProperty _surfaces;
-        private SerializedProperty _walkVolume;
-        private SerializedProperty _sprintVolume;
-        private SerializedProperty _crouchVolume;
+        private SerializedProperty states;
+        private ReorderableList list;
+        private static float Line => EditorGUIUtility.singleLineHeight + EditorGUIUtility.standardVerticalSpacing;
 
         private void OnEnable()
         {
-            _motionSource = serializedObject.FindProperty("_motionSource");
-            _stepSourceMode = serializedObject.FindProperty("_stepSourceMode");
-            _validateExternalSteps = serializedObject.FindProperty("_validateExternalSteps");
-            _minMoveSpeed = serializedObject.FindProperty("_minMoveSpeed");
-            _walkStepDistance = serializedObject.FindProperty("_walkStepDistance");
-            _sprintStepDistance = serializedObject.FindProperty("_sprintStepDistance");
-            _crouchStepDistance = serializedObject.FindProperty("_crouchStepDistance");
-            _startStepPhase = serializedObject.FindProperty("_startStepPhase");
-            _enableHeadBob = serializedObject.FindProperty("_enableHeadBob");
-            _headBobTarget = serializedObject.FindProperty("_headBobTarget");
-            _headBobHorizontalCurve = serializedObject.FindProperty("_headBobHorizontalCurve");
-            _headBobVerticalCurve = serializedObject.FindProperty("_headBobVerticalCurve");
-            _headBobHorizontalAmplitude = serializedObject.FindProperty("_headBobHorizontalAmplitude");
-            _headBobVerticalAmplitude = serializedObject.FindProperty("_headBobVerticalAmplitude");
-            _headBobCrouchMultiplier = serializedObject.FindProperty("_headBobCrouchMultiplier");
-            _headBobSprintAmplitudeMultiplier = serializedObject.FindProperty("_headBobSprintAmplitudeMultiplier");
-            _headBobStepImpactAmplitude = serializedObject.FindProperty("_headBobStepImpactAmplitude");
-            _headBobStepImpactDecaySpeed = serializedObject.FindProperty("_headBobStepImpactDecaySpeed");
-            _headBobBlendInSpeed = serializedObject.FindProperty("_headBobBlendInSpeed");
-            _headBobBlendOutSpeed = serializedObject.FindProperty("_headBobBlendOutSpeed");
-            _headBobPositionSmoothTime = serializedObject.FindProperty("_headBobPositionSmoothTime");
-            _enableStepFeedback = serializedObject.FindProperty("_enableStepFeedback");
-            _defaultFeedback = serializedObject.FindProperty("_defaultFeedback");
-            _surfaces = serializedObject.FindProperty("_surfaces");
-            _walkVolume = serializedObject.FindProperty("_walkVolume");
-            _sprintVolume = serializedObject.FindProperty("_sprintVolume");
-            _crouchVolume = serializedObject.FindProperty("_crouchVolume");
+            states = serializedObject.FindProperty("_states");
+            list = new ReorderableList(serializedObject, states, true, true, true, true);
+            list.drawHeaderCallback = rect => EditorGUI.LabelField(rect, "Movement States");
+            list.elementHeightCallback = i => Line * (states.GetArrayElementAtIndex(i).isExpanded ? 6 : 1) + 4;
+            list.drawElementCallback = DrawState;
+            list.onAddCallback = AddState;
+        }
+
+        private void AddState(ReorderableList rows)
+        {
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < states.arraySize; i++)
+                names.Add(states.GetArrayElementAtIndex(i).FindPropertyRelative("id").stringValue);
+
+            int n = 1;
+            while (names.Contains("State " + n)) n++;
+            int index = states.arraySize++;
+            var row = states.GetArrayElementAtIndex(index);
+            row.FindPropertyRelative("id").stringValue = "State " + n;
+            row.FindPropertyRelative("stepDistance").floatValue = 1.95f;
+            row.FindPropertyRelative("feedbackVolume").floatValue = 0.75f;
+            row.FindPropertyRelative("headBobMultiplier").floatValue = 1f;
+            row.FindPropertyRelative("externalMovementAmount").floatValue = 0.75f;
+            row.FindPropertyRelative("legacySlot").intValue = 0;
+            row.isExpanded = true;
+            rows.index = index;
+        }
+
+        private void DrawState(Rect rect, int index, bool active, bool focused)
+        {
+            var row = states.GetArrayElementAtIndex(index);
+            var id = row.FindPropertyRelative("id");
+            rect.xMin += 12;
+            rect.y += 2;
+            rect.height = EditorGUIUtility.singleLineHeight;
+            row.isExpanded = EditorGUI.Foldout(rect, row.isExpanded,
+                string.IsNullOrWhiteSpace(id.stringValue) ? "(unnamed)" : id.stringValue, true);
+            if (!row.isExpanded) return;
+
+            int slot = row.FindPropertyRelative("legacySlot").intValue;
+            string distance = slot switch { 1 => "_walkStepDistance", 2 => "_sprintStepDistance", 3 => "_crouchStepDistance", _ => null };
+            string volume = slot switch { 1 => "_walkVolume", 2 => "_sprintVolume", 3 => "_crouchVolume", _ => null };
+            string bob = slot switch { 2 => "_headBobSprintAmplitudeMultiplier", 3 => "_headBobCrouchMultiplier", _ => null };
+            void Field(string path, string label, string oldPath = null)
+            {
+                rect.y += Line;
+                var prop = oldPath == null ? row.FindPropertyRelative(path) : serializedObject.FindProperty(oldPath);
+                EditorGUI.PropertyField(rect, prop, new GUIContent(label));
+            }
+            Field("id", "State ID");
+            Field("stepDistance", "Step Distance", distance);
+            Field("feedbackVolume", "Feedback Volume", volume);
+            Field("headBobMultiplier", "Head Bob Multiplier", bob);
+            Field("externalMovementAmount", "External Step Amount");
         }
 
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
-
-            EditorGUILayout.PropertyField(_motionSource);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Step Source", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_stepSourceMode);
-            EditorGUILayout.PropertyField(_validateExternalSteps);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Step Timing", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(_minMoveSpeed);
-            EditorGUILayout.PropertyField(_walkStepDistance);
-            EditorGUILayout.PropertyField(_sprintStepDistance);
-            EditorGUILayout.PropertyField(_crouchStepDistance);
-            EditorGUILayout.PropertyField(_startStepPhase);
-
-            EditorGUILayout.Space();
-            EditorGUILayout.PropertyField(_enableHeadBob, new GUIContent("Enable Head Bob"));
-            if (_enableHeadBob.boolValue)
+            void Field(string path) => EditorGUILayout.PropertyField(serializedObject.FindProperty(path), true);
+            Field("_motionSource");
+            Field("_stepSourceMode");
+            Field("_validateExternalSteps");
+            Field("_minMoveSpeed");
+            Field("_startStepPhase");
+            list.DoLayoutList();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < states.arraySize; i++)
             {
-                EditorGUILayout.LabelField("Head Bob", EditorStyles.boldLabel);
+                string id = states.GetArrayElementAtIndex(i).FindPropertyRelative("id").stringValue;
+                if (string.IsNullOrWhiteSpace(id) || !seen.Add(id) || id != id.Trim())
+                {
+                    EditorGUILayout.HelpBox("Give each state a unique ID without leading or trailing spaces.", MessageType.Warning);
+                    break;
+                }
+            }
+            if (states.arraySize == 0)
+                EditorGUILayout.HelpBox("Add a state to enable footsteps.", MessageType.Info);
+
+            Field("_enableHeadBob");
+            if (serializedObject.FindProperty("_enableHeadBob").boolValue)
+            {
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(_headBobTarget, new GUIContent("Camera Target"));
-                EditorGUILayout.PropertyField(_headBobHorizontalCurve, new GUIContent("Horizontal Curve"));
-                EditorGUILayout.PropertyField(_headBobVerticalCurve, new GUIContent("Vertical Curve"));
-                EditorGUILayout.PropertyField(_headBobHorizontalAmplitude);
-                EditorGUILayout.PropertyField(_headBobVerticalAmplitude);
-                EditorGUILayout.PropertyField(_headBobCrouchMultiplier);
-                EditorGUILayout.PropertyField(_headBobSprintAmplitudeMultiplier);
-                EditorGUILayout.PropertyField(_headBobStepImpactAmplitude);
-                EditorGUILayout.PropertyField(_headBobStepImpactDecaySpeed);
-                EditorGUILayout.PropertyField(_headBobBlendInSpeed);
-                EditorGUILayout.PropertyField(_headBobBlendOutSpeed);
-                EditorGUILayout.PropertyField(_headBobPositionSmoothTime);
+                Field("_headBobTarget");
+                Field("_headBobHorizontalCurve");
+                Field("_headBobVerticalCurve");
+                Field("_headBobHorizontalAmplitude");
+                Field("_headBobVerticalAmplitude");
+                Field("_headBobStepImpactAmplitude");
+                Field("_headBobStepImpactDecaySpeed");
+                Field("_headBobBlendInSpeed");
+                Field("_headBobBlendOutSpeed");
+                Field("_headBobPositionSmoothTime");
                 EditorGUI.indentLevel--;
             }
-
-            EditorGUILayout.Space();
-            EditorGUILayout.PropertyField(_enableStepFeedback, new GUIContent("Enable Step Feedback"));
-            if (_enableStepFeedback.boolValue)
+            Field("_enableStepFeedback");
+            if (serializedObject.FindProperty("_enableStepFeedback").boolValue)
             {
-                EditorGUILayout.LabelField("Step Feedback", EditorStyles.boldLabel);
                 EditorGUI.indentLevel++;
-                EditorGUILayout.PropertyField(_defaultFeedback);
-                EditorGUILayout.PropertyField(_surfaces, true);
-                EditorGUILayout.PropertyField(_walkVolume);
-                EditorGUILayout.PropertyField(_sprintVolume);
-                EditorGUILayout.PropertyField(_crouchVolume);
+                Field("_defaultFeedback");
+                Field("_surfaces");
                 EditorGUI.indentLevel--;
             }
-
             serializedObject.ApplyModifiedProperties();
         }
     }

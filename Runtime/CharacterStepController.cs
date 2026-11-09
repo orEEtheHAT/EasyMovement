@@ -5,7 +5,7 @@ using UnityEngine;
 namespace EasyFootsteps
 {
     [DisallowMultipleComponent]
-    public sealed class CharacterStepController : MonoBehaviour
+    public sealed class CharacterStepController : MonoBehaviour, ISerializationCallbackReceiver
     {
         public enum StepSourceMode
         {
@@ -17,7 +17,8 @@ namespace EasyFootsteps
         {
             Walk,
             Sprint,
-            Crouch
+            Crouch,
+            Custom
         }
 
         public readonly struct StepEvent
@@ -31,6 +32,7 @@ namespace EasyFootsteps
                 int stepIndex,
                 int stepSide)
             {
+                StateId = FootstepState.IdFor(mode);
                 Mode = mode;
                 GroundCollider = groundCollider;
                 Speed = speed;
@@ -40,6 +42,14 @@ namespace EasyFootsteps
                 StepSide = stepSide;
             }
 
+            public StepEvent(string stateId, Collider groundCollider, float speed, float stepDistance,
+                float movementAmount, int stepIndex, int stepSide)
+                : this(FootstepState.LegacyMode(stateId), groundCollider, speed, stepDistance, movementAmount, stepIndex, stepSide)
+            {
+                StateId = stateId;
+            }
+
+            public string StateId { get; }
             public MovementMode Mode { get; }
             public Collider GroundCollider { get; }
             public float Speed { get; }
@@ -68,9 +78,13 @@ namespace EasyFootsteps
 
         [Header("Step Timing")]
         [SerializeField, Min(0f)] private float _minMoveSpeed = 0.2f;
-        [SerializeField, Min(0.01f)] private float _walkStepDistance = 1.95f;
-        [SerializeField, Min(0.01f)] private float _sprintStepDistance = 2.25f;
-        [SerializeField, Min(0.01f)] private float _crouchStepDistance = 1.4f;
+        [SerializeField] private FootstepState[] _states;
+        [SerializeField, HideInInspector] private bool _statesInitialized;
+
+        // v1.0 field paths are still used by existing prefab and scene overrides.
+        [SerializeField, HideInInspector, Min(0.01f)] private float _walkStepDistance = 1.95f;
+        [SerializeField, HideInInspector, Min(0.01f)] private float _sprintStepDistance = 2.25f;
+        [SerializeField, HideInInspector, Min(0.01f)] private float _crouchStepDistance = 1.4f;
         [SerializeField, Range(0f, 0.95f)] private float _startStepPhase = 0.5f;
 
         [Header("Head Bob")]
@@ -80,8 +94,8 @@ namespace EasyFootsteps
         [SerializeField] private AnimationCurve _headBobVerticalCurve = CreateDefaultHeadBobVerticalCurve();
         [SerializeField, Min(0f)] private float _headBobHorizontalAmplitude = 0.05f;
         [SerializeField, Min(0f)] private float _headBobVerticalAmplitude = 0.05f;
-        [SerializeField, Range(0f, 1f)] private float _headBobCrouchMultiplier = 0.55f;
-        [SerializeField, Min(0f)] private float _headBobSprintAmplitudeMultiplier = 1.5f;
+        [SerializeField, HideInInspector, Min(0f)] private float _headBobCrouchMultiplier = 0.55f;
+        [SerializeField, HideInInspector, Min(0f)] private float _headBobSprintAmplitudeMultiplier = 1.5f;
         [SerializeField, Min(0f)] private float _headBobStepImpactAmplitude = 0.05f;
         [SerializeField, Min(0f)] private float _headBobStepImpactDecaySpeed = 0.24f;
         [SerializeField, Min(0f)] private float _headBobBlendInSpeed = 10f;
@@ -93,9 +107,9 @@ namespace EasyFootsteps
         [Tooltip("Used if no surface override or physics material has a feedback assigned.")]
         [SerializeField] private FeedbackPreset _defaultFeedback;
         [SerializeField] private SurfaceFeedback[] _surfaces = Array.Empty<SurfaceFeedback>();
-        [SerializeField, Min(0f)] private float _walkVolume = 0.75f;
-        [SerializeField, Min(0f)] private float _sprintVolume = 1f;
-        [SerializeField, Min(0f)] private float _crouchVolume = 0.45f;
+        [SerializeField, HideInInspector, Min(0f)] private float _walkVolume = 0.75f;
+        [SerializeField, HideInInspector, Min(0f)] private float _sprintVolume = 1f;
+        [SerializeField, HideInInspector, Min(0f)] private float _crouchVolume = 0.45f;
 
         private float _distanceSinceLastStep;
         private int _stepIndex;
@@ -112,7 +126,9 @@ namespace EasyFootsteps
         public event Action<StepEvent> Stepped;
 
         public StepSourceMode SourceMode => _stepSourceMode;
-        public MovementMode CurrentMode { get; private set; }
+        private FootstepState _activeState;
+        public string CurrentStateId => _activeState.id;
+        public MovementMode CurrentMode => CurrentStateId == null ? MovementMode.Walk : FootstepState.LegacyMode(CurrentStateId);
         public Collider GroundCollider { get; private set; }
         public float CurrentSpeed { get; private set; }
         public float CurrentStepDistance { get; private set; } = 1f;
@@ -142,13 +158,29 @@ namespace EasyFootsteps
                 new Keyframe(1f, -1f));
         }
 
+        void ISerializationCallbackReceiver.OnBeforeSerialize() { }
+
+        void ISerializationCallbackReceiver.OnAfterDeserialize() => EnsureStateList();
+
+        private void EnsureStateList()
+        {
+            if (_statesInitialized)
+                return;
+
+            _states = FootstepState.Defaults(true);
+            _statesInitialized = true;
+        }
+
         private void Reset()
         {
+            _states = FootstepState.Defaults(false);
+            _statesInitialized = true;
             _motionSource = GetComponent<FootstepMotionSource>();
         }
 
         private void Awake()
         {
+            EnsureStateList();
             if (!_motionSource)
                 _motionSource = GetComponent<FootstepMotionSource>();
 
@@ -245,18 +277,20 @@ namespace EasyFootsteps
 
         public void PlayExternalStep(MovementMode mode, int stepSide)
         {
-            CurrentMode = mode;
-            CurrentStepDistance = GetStepDistance(CurrentMode);
-            GroundCollider = FindGroundCollider();
+            PlayExternalStep(FootstepState.IdFor(mode), stepSide);
+        }
 
-            CurrentSpeed = 0f;
-            MovementAmount = mode switch
+        public void PlayExternalStep(string stateId, int stepSide)
+        {
+            if (!SelectState(stateId))
             {
-                MovementMode.Crouch => 0.45f,
-                MovementMode.Sprint => 1f,
-                _ => 0.75f
-            };
+                ResetCycle();
+                return;
+            }
 
+            GroundCollider = FindGroundCollider();
+            CurrentSpeed = 0f;
+            MovementAmount = _activeState.externalMovementAmount;
             _stepIndex++;
             _stepSide = stepSide == 0 ? -_stepSide : NormalizeStepSide(stepSide);
 
@@ -264,7 +298,7 @@ namespace EasyFootsteps
             IsStepping = true;
 
             StepEvent stepEvent = new StepEvent(
-                CurrentMode,
+                CurrentStateId,
                 GroundCollider,
                 CurrentSpeed,
                 CurrentStepDistance,
@@ -283,8 +317,8 @@ namespace EasyFootsteps
 
             GroundCollider = motion.Ground;
             CurrentSpeed = Mathf.Max(0f, motion.PlanarSpeed);
-            CurrentMode = motion.Mode;
-            CurrentStepDistance = GetStepDistance(CurrentMode);
+            if (!SelectState(motion.StateId))
+                return false;
             MovementAmount = Mathf.Clamp01(CurrentSpeed / Mathf.Max(motion.MaxSpeed, 0.01f));
             return true;
         }
@@ -321,7 +355,7 @@ namespace EasyFootsteps
             AddHeadBobStepImpact();
 
             StepEvent stepEvent = new StepEvent(
-                CurrentMode,
+                CurrentStateId,
                 GroundCollider,
                 CurrentSpeed,
                 CurrentStepDistance,
@@ -333,14 +367,53 @@ namespace EasyFootsteps
             Stepped?.Invoke(stepEvent);
         }
 
-        private float GetStepDistance(MovementMode mode)
+        private bool SelectState(string requestedId)
         {
-            return mode switch
+            EnsureStateList();
+            FootstepState selected = default;
+            foreach (var state in _states ?? Array.Empty<FootstepState>())
             {
-                MovementMode.Crouch => Mathf.Max(_crouchStepDistance, 0.01f),
-                MovementMode.Sprint => Mathf.Max(_sprintStepDistance, 0.01f),
-                _ => Mathf.Max(_walkStepDistance, 0.01f)
-            };
+                if (string.IsNullOrWhiteSpace(state.id))
+                    continue;
+                if (selected.id == null)
+                    selected = state;
+                if (string.Equals(state.id, requestedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    selected = state;
+                    break;
+                }
+            }
+
+            if (selected.id == null)
+            {
+                _activeState = default;
+                return false;
+            }
+
+            switch (selected.legacySlot)
+            {
+                case 1:
+                    selected.stepDistance = _walkStepDistance;
+                    selected.feedbackVolume = _walkVolume;
+                    break;
+                case 2:
+                    selected.stepDistance = _sprintStepDistance;
+                    selected.feedbackVolume = _sprintVolume;
+                    selected.headBobMultiplier = _headBobSprintAmplitudeMultiplier;
+                    break;
+                case 3:
+                    selected.stepDistance = _crouchStepDistance;
+                    selected.feedbackVolume = _crouchVolume;
+                    selected.headBobMultiplier = _headBobCrouchMultiplier;
+                    break;
+            }
+            float distance = Mathf.Max(0.01f, selected.stepDistance);
+            if (_activeState.id != null && distance != CurrentStepDistance)
+                _distanceSinceLastStep = CalculateStepPhase() * distance;
+
+            _activeState = selected;
+            CurrentStepDistance = distance;
+            return true;
         }
 
         private float CalculateStepPhase()
@@ -394,7 +467,7 @@ namespace EasyFootsteps
                 targetAmount,
                 blendSpeed * Time.deltaTime);
 
-            float amplitudeMultiplier = GetHeadBobAmplitudeMultiplier(CurrentMode);
+            float amplitudeMultiplier = _activeState.headBobMultiplier;
 
             Vector3 offset = CalculateHeadBobOffset(StepPhase, StepSide) *
                              (_headBobAmount * amplitudeMultiplier);
@@ -439,16 +512,6 @@ namespace EasyFootsteps
             float y = vertical * _headBobVerticalAmplitude;
 
             return new Vector3(x, y, 0f);
-        }
-
-        private float GetHeadBobAmplitudeMultiplier(MovementMode mode)
-        {
-            return mode switch
-            {
-                MovementMode.Crouch => _headBobCrouchMultiplier,
-                MovementMode.Sprint => _headBobSprintAmplitudeMultiplier,
-                _ => 1f
-            };
         }
 
         private void MoveHeadBobTarget(Vector3 targetLocalPosition)
@@ -506,7 +569,7 @@ namespace EasyFootsteps
             FeedbackPreset preset = ResolveFeedback(step.GroundCollider);
             if (preset)
             {
-                float volume = GetStepVolume(step.Mode);
+                float volume = _activeState.feedbackVolume;
                 FeedbackService.Play(preset, FeedbackContext.From(transform, null, 1f, volume, Vector3.one));
             }
         }
@@ -528,14 +591,5 @@ namespace EasyFootsteps
             return _defaultFeedback;
         }
 
-        private float GetStepVolume(MovementMode mode)
-        {
-            return mode switch
-            {
-                MovementMode.Crouch => _crouchVolume,
-                MovementMode.Sprint => _sprintVolume,
-                _ => _walkVolume
-            };
-        }
     }
 }
