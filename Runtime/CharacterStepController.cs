@@ -105,6 +105,8 @@ namespace EasyFootsteps
 
         [Header("Step Feedback")]
         [SerializeField] private bool _enableStepFeedback = true;
+        [Tooltip("World position and orientation for each footstep feedback. Defaults to this transform.")]
+        [SerializeField] private Transform _stepSoundOrigin;
         [Tooltip("Used if no surface override or physics material has a feedback assigned.")]
         [SerializeField] private FeedbackPreset _defaultFeedback;
         [SerializeField] private SurfaceFeedback[] _surfaces = Array.Empty<SurfaceFeedback>();
@@ -578,7 +580,8 @@ namespace EasyFootsteps
             if (preset)
             {
                 float volume = _activeState.feedbackVolume;
-                FeedbackService.Play(preset, FeedbackContext.From(transform, null, 1f, volume, Vector3.one));
+                Transform origin = _stepSoundOrigin ? _stepSoundOrigin : transform;
+                FeedbackService.Play(preset, FeedbackContext.From(origin, null, 1f, volume, Vector3.one));
             }
         }
 

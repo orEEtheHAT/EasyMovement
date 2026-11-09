@@ -120,6 +120,7 @@ namespace EasyFootsteps.Editor
             if (serializedObject.FindProperty("_enableStepFeedback").boolValue)
             {
                 EditorGUI.indentLevel++;
+                Field("_stepSoundOrigin");
                 Field("_defaultFeedback");
                 Field("_surfaces");
                 EditorGUI.indentLevel--;
