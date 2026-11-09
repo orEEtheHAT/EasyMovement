@@ -120,9 +120,11 @@ namespace EasyFootsteps
         private Vector3 _headBobPositionVelocity;
         private float _headBobAmount;
         private float _headBobStepImpact;
-        private bool _hasHeadBobStartPosition;
-        private Transform _cachedHeadBobTarget;
-        private bool _headBobWasApplied;
+        private Transform _appliedHeadBobTarget;
+        private string _lastRequestedId;
+        private bool _stateSelectionCached;
+        private IDeferredFootstepGround _pendingGround;
+        private Collider _groundCollider;
 
         public event Action<StepEvent> Stepped;
 
@@ -130,7 +132,19 @@ namespace EasyFootsteps
         private FootstepState _activeState;
         public string CurrentStateId => _activeState.id;
         public MovementMode CurrentMode => CurrentStateId == null ? MovementMode.Walk : FootstepState.LegacyMode(CurrentStateId);
-        public Collider GroundCollider { get; private set; }
+        public Collider GroundCollider
+        {
+            get
+            {
+                if (_pendingGround != null)
+                {
+                    _groundCollider = _motionSource ? _pendingGround.FindGround() : null;
+                    _pendingGround = null;
+                }
+                return _groundCollider;
+            }
+            private set { _groundCollider = value; _pendingGround = null; }
+        }
         public float CurrentSpeed { get; private set; }
         public float CurrentStepDistance { get; private set; } = 1f;
         public float MovementAmount { get; private set; }
@@ -161,7 +175,13 @@ namespace EasyFootsteps
 
         void ISerializationCallbackReceiver.OnBeforeSerialize() { }
 
-        void ISerializationCallbackReceiver.OnAfterDeserialize() => EnsureStateList();
+        void ISerializationCallbackReceiver.OnAfterDeserialize()
+        {
+            _stateSelectionCached = false;
+            EnsureStateList();
+        }
+
+        private void OnValidate() => _stateSelectionCached = false;
 
         private void EnsureStateList()
         {
@@ -175,6 +195,7 @@ namespace EasyFootsteps
         private void Reset()
         {
             _states = FootstepState.Defaults(false);
+            _stateSelectionCached = false;
             _statesInitialized = true;
             _motionSource = GetComponent<IFootstepMotionSource>() as MonoBehaviour;
         }
@@ -184,8 +205,6 @@ namespace EasyFootsteps
             EnsureStateList();
             if (!_motionSource || _motionSource is not IFootstepMotionSource)
                 _motionSource = GetComponent<IFootstepMotionSource>() as MonoBehaviour;
-
-            CacheHeadBobStartPosition();
         }
 
         private void Update()
@@ -224,11 +243,9 @@ namespace EasyFootsteps
 
         private void LateUpdate()
         {
-            if (!ApplyHeadBob)
+            if (!ApplyHeadBob || !_enableHeadBob || !_headBobTarget)
             {
-                if (_headBobWasApplied)
-                    ResetHeadBob();
-
+                if (!ReferenceEquals(_appliedHeadBobTarget, null)) ResetHeadBob();
                 return;
             }
 
@@ -298,26 +315,20 @@ namespace EasyFootsteps
             StepPhase = 0f;
             IsStepping = true;
 
-            StepEvent stepEvent = new StepEvent(
-                CurrentStateId,
-                GroundCollider,
-                CurrentSpeed,
-                CurrentStepDistance,
-                MovementAmount,
-                _stepIndex,
-                _stepSide);
-
-            PlayStepFeedback(stepEvent);
-            Stepped?.Invoke(stepEvent);
+            NotifyStep();
         }
 
         private bool RefreshState()
         {
-            if (!_motionSource || !_motionSource.isActiveAndEnabled || _motionSource is not IFootstepMotionSource source ||
-                !source.TryGetGroundedMotion(out FootstepMotion motion))
+            if (!_motionSource || !_motionSource.isActiveAndEnabled || _motionSource is not IFootstepMotionSource source)
                 return false;
 
-            GroundCollider = motion.Ground;
+            var deferred = source as IDeferredFootstepGround;
+            FootstepMotion motion;
+            bool grounded = deferred != null ? deferred.TryGetMotionWithoutGround(out motion) : source.TryGetGroundedMotion(out motion);
+            if (!grounded) return false;
+            _groundCollider = motion.Ground;
+            _pendingGround = deferred;
             CurrentSpeed = Mathf.Max(0f, motion.PlanarSpeed);
             if (!SelectState(motion.StateId))
                 return false;
@@ -356,6 +367,12 @@ namespace EasyFootsteps
 
             AddHeadBobStepImpact();
 
+            NotifyStep();
+        }
+
+        private void NotifyStep()
+        {
+            if (!_enableStepFeedback && Stepped == null) return;
             StepEvent stepEvent = new StepEvent(
                 CurrentStateId,
                 GroundCollider,
@@ -372,6 +389,11 @@ namespace EasyFootsteps
         private bool SelectState(string requestedId)
         {
             EnsureStateList();
+            if (_stateSelectionCached && string.Equals(_lastRequestedId, requestedId, StringComparison.OrdinalIgnoreCase))
+                return _activeState.id != null;
+
+            _lastRequestedId = requestedId;
+            _stateSelectionCached = true;
             FootstepState selected = default;
             foreach (var state in _states ?? Array.Empty<FootstepState>())
             {
@@ -450,18 +472,16 @@ namespace EasyFootsteps
 
         private void UpdateHeadBob()
         {
-            if (!_enableHeadBob || !_headBobTarget)
-            {
-                if (_headBobWasApplied)
-                    ResetHeadBob();
-
-                return;
-            }
-
-            CacheHeadBobStartPosition();
-            _headBobWasApplied = true;
+            if (!ReferenceEquals(_appliedHeadBobTarget, null) && _appliedHeadBobTarget != _headBobTarget)
+                ResetHeadBob();
 
             float targetAmount = IsStepping ? MovementAmount : 0f;
+            if (!_appliedHeadBobTarget)
+            {
+                if (targetAmount <= 0f && _headBobStepImpact <= 0f) return;
+                _appliedHeadBobTarget = _headBobTarget;
+                _headBobStartLocalPosition = _headBobTarget.localPosition;
+            }
             float blendSpeed = targetAmount > _headBobAmount ? _headBobBlendInSpeed : _headBobBlendOutSpeed;
 
             _headBobAmount = Mathf.MoveTowards(
@@ -469,10 +489,17 @@ namespace EasyFootsteps
                 targetAmount,
                 blendSpeed * Time.deltaTime);
 
-            float amplitudeMultiplier = _activeState.headBobMultiplier;
+            if (_headBobAmount == 0f && _headBobStepImpact == 0f)
+            {
+                if ((_headBobTarget.localPosition - _headBobStartLocalPosition).sqrMagnitude < 1e-8f)
+                    ResetHeadBob();
+                else
+                    MoveHeadBobTarget(_headBobStartLocalPosition);
+                return;
+            }
 
             Vector3 offset = CalculateHeadBobOffset(StepPhase, StepSide) *
-                             (_headBobAmount * amplitudeMultiplier);
+                             (_headBobAmount * _activeState.headBobMultiplier);
 
             if (_headBobStepImpact > 0f)
             {
@@ -488,7 +515,7 @@ namespace EasyFootsteps
 
         private void AddHeadBobStepImpact()
         {
-            if (!_enableHeadBob || !_headBobTarget)
+            if (!ApplyHeadBob || !_enableHeadBob || !_headBobTarget)
                 return;
 
             float movementAmount = Mathf.Max(MovementAmount, 0.25f);
@@ -531,36 +558,15 @@ namespace EasyFootsteps
                 _headBobPositionSmoothTime);
         }
 
-        private void CacheHeadBobStartPosition()
-        {
-            if (!_headBobTarget)
-                return;
-
-            if (_cachedHeadBobTarget != _headBobTarget)
-            {
-                _cachedHeadBobTarget = _headBobTarget;
-                _hasHeadBobStartPosition = false;
-                _headBobPositionVelocity = Vector3.zero;
-                _headBobAmount = 0f;
-                _headBobStepImpact = 0f;
-            }
-
-            if (_hasHeadBobStartPosition)
-                return;
-
-            _headBobStartLocalPosition = _headBobTarget.localPosition;
-            _hasHeadBobStartPosition = true;
-        }
-
         private void ResetHeadBob()
         {
-            if (_headBobTarget && _hasHeadBobStartPosition)
-                _headBobTarget.localPosition = _headBobStartLocalPosition;
+            if (_appliedHeadBobTarget)
+                _appliedHeadBobTarget.localPosition = _headBobStartLocalPosition;
 
+            _appliedHeadBobTarget = null;
             _headBobPositionVelocity = Vector3.zero;
             _headBobAmount = 0f;
             _headBobStepImpact = 0f;
-            _headBobWasApplied = false;
         }
 
         private void PlayStepFeedback(StepEvent step)
@@ -585,9 +591,10 @@ namespace EasyFootsteps
             if (surface && surface.Feedback)
                 return surface.Feedback;
 
+            var material = ground.sharedMaterial;
             foreach (var entry in _surfaces)
             {
-                if (entry.physicsMaterial && entry.physicsMaterial == ground.sharedMaterial && entry.feedback)
+                if (entry.physicsMaterial && entry.physicsMaterial == material && entry.feedback)
                     return entry.feedback;
             }
             return _defaultFeedback;

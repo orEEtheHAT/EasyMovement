@@ -1,3 +1,4 @@
+using System;
 using EasyFootsteps;
 using ECM2;
 using Unity.Cinemachine;
@@ -8,6 +9,15 @@ namespace EasyMovement.FirstPerson
     [DisallowMultipleComponent]
     public class FirstPersonCharacterController : Character, IFootstepMotionSource
     {
+        [Serializable]
+        private sealed class CustomState
+        {
+            [FootstepStateId] public string stateId = string.Empty;
+            [Min(0f)] public float maxSpeed = 3f;
+            public CinemachineCamera view = null;
+        }
+
+        private enum Gait { Walk, Sprint, Crouch, Custom }
         [Header("View")]
         public GameObject cameraTarget;
         public CinemachineCamera defaultCamera;
@@ -15,20 +25,66 @@ namespace EasyMovement.FirstPerson
         public CinemachineCamera sprintCamera;
         [SerializeField] private bool lockCursorOnStart = true;
 
-        [Header("Sprint")]
+        [SerializeField] private bool allowSprint = true;
         [SerializeField, Min(0f)] private float _maxSprintSpeed = 8f;
         [SerializeField, Range(0f, 1f)] private float _minSprintInput = 0.1f;
 
-        [Header("Footsteps")]
-        [SerializeField] private string walkState = "Walk";
-        [SerializeField] private string sprintState = "Sprint";
-        [SerializeField] private string crouchState = "Crouch";
+        [SerializeField, FootstepStateId] private string walkState = "Walk";
+        [SerializeField, FootstepStateId] private string sprintState = "Sprint";
+        [SerializeField, FootstepStateId] private string crouchState = "Crouch";
+        [SerializeField] private CustomState[] customStates = Array.Empty<CustomState>();
         [Tooltip("Distance below the pivot to search if ECM2 has no ground collider for an external step.")]
         [SerializeField, Min(0f)] private float groundProbeDepth = 2f;
 
         private bool sprintRequested;
         private bool sprinting;
         private float pitch;
+        private CustomState requestedState;
+        private CinemachineCamera lastView;
+        private bool refreshSettings;
+
+        private Gait CurrentGait
+        {
+            get
+            {
+                if (!IsWalking()) return Gait.Walk;
+                if (IsCrouched()) return Gait.Crouch;
+                if (requestedState != null) return Gait.Custom;
+                return sprinting ? Gait.Sprint : Gait.Walk;
+            }
+        }
+
+        public string ActiveStateId => GetGroundedStateId();
+
+        private CustomState FindCustomState(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id)) return null;
+            foreach (var state in customStates ?? Array.Empty<CustomState>())
+                if (state != null && string.Equals(state.stateId, id, StringComparison.OrdinalIgnoreCase))
+                    return state;
+            return null;
+        }
+
+        // The void signature also works as a UnityEvent listener.
+        public void SetCustomState(string id) => TrySetCustomState(id);
+
+        public bool TrySetCustomState(string id)
+        {
+            var state = FindCustomState(id);
+            if (state == null) return false;
+            if (state == requestedState) return true;
+            requestedState = state;
+            sprinting = false;
+            UpdateView();
+            return true;
+        }
+
+        public void ClearCustomState()
+        {
+            if (requestedState == null) return;
+            requestedState = null;
+            UpdateView();
+        }
 
         public float MaxSprintSpeed
         {
@@ -40,12 +96,22 @@ namespace EasyMovement.FirstPerson
         public void Sprint() => sprintRequested = true;
         public void StopSprinting() => sprintRequested = false;
 
-        public override float GetMaxSpeed() => sprinting ? MaxSprintSpeed : base.GetMaxSpeed();
+        public override float GetMaxSpeed() => CurrentGait switch
+        {
+            Gait.Custom => requestedState.maxSpeed,
+            Gait.Sprint => MaxSprintSpeed,
+            _ => base.GetMaxSpeed()
+        };
 
         protected virtual string GetGroundedStateId()
         {
-            if (IsCrouched()) return crouchState;
-            return sprinting ? sprintState : walkState;
+            return CurrentGait switch
+            {
+                Gait.Crouch => crouchState,
+                Gait.Custom => requestedState.stateId,
+                Gait.Sprint => sprintState,
+                _ => walkState
+            };
         }
 
         public bool TryGetGroundedMotion(out FootstepMotion motion)
@@ -90,8 +156,15 @@ namespace EasyMovement.FirstPerson
         protected override void OnBeforeSimulationUpdate(float deltaTime)
         {
             base.OnBeforeSimulationUpdate(deltaTime);
-            float input = GetMovementDirection().magnitude;
-            bool next = sprintRequested && IsWalking() && !IsCrouched() && input > 0f && input >= _minSprintInput;
+            if (refreshSettings)
+            {
+                refreshSettings = false;
+                if (requestedState != null) requestedState = FindCustomState(requestedState.stateId);
+                UpdateView();
+            }
+            float inputSquared = GetMovementDirection().sqrMagnitude;
+            bool next = allowSprint && sprintRequested && requestedState == null && IsWalking() &&
+                        !IsCrouched() && inputSquared > 0f && inputSquared >= _minSprintInput * _minSprintInput;
             if (sprinting == next) return;
             sprinting = next;
             UpdateView();
@@ -109,6 +182,12 @@ namespace EasyMovement.FirstPerson
             UpdateView();
         }
 
+        protected override void OnMovementModeChanged(MovementMode previousMode, int previousCustomMode)
+        {
+            base.OnMovementModeChanged(previousMode, previousCustomMode);
+            UpdateView();
+        }
+
         protected override void OnEnable()
         {
             base.OnEnable();
@@ -120,17 +199,33 @@ namespace EasyMovement.FirstPerson
             base.OnDisable();
             sprintRequested = false;
             sprinting = false;
+            requestedState = null;
+        }
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+            refreshSettings = true;
         }
 
         private void UpdateView()
         {
-            var view = defaultCamera;
-            if (IsCrouched() && crouchedCamera) view = crouchedCamera;
-            else if (sprinting && sprintCamera) view = sprintCamera;
+            var view = CurrentGait switch
+            {
+                Gait.Crouch => crouchedCamera,
+                Gait.Sprint => sprintCamera,
+                Gait.Custom => requestedState.view,
+                _ => defaultCamera
+            };
+            if (!view) view = defaultCamera;
 
+            if (lastView != view) SetView(lastView, view);
+            lastView = view;
             SetView(defaultCamera, view);
             SetView(crouchedCamera, view);
             SetView(sprintCamera, view);
+            foreach (var state in customStates ?? Array.Empty<CustomState>())
+                if (state != null) SetView(state.view, view);
         }
 
         private static void SetView(CinemachineCamera candidate, CinemachineCamera activeView)

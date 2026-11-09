@@ -1,0 +1,11 @@
+{
+  "name": "EasyMovement.FirstPerson.Editor",
+  "rootNamespace": "EasyMovement.FirstPerson.Editor",
+  "references": [
+    "EasyMovement.FirstPerson",
+    "ECM2"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ]
+}
