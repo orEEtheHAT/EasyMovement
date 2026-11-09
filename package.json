@@ -1,0 +1,17 @@
+{
+  "name": "com.oreethehat.easy-footsteps",
+  "version": "1.0.0",
+  "displayName": "EasyFootsteps",
+  "description": "Distance- and event-driven footsteps with surface feedback and optional head bob.",
+  "unity": "6000.3",
+  "dependencies": {
+    "com.oreethehat.easy-feedbacks": "1.7.0",
+    "com.unity.modules.ai": "1.0.0",
+    "com.unity.modules.audio": "1.0.0",
+    "com.unity.modules.particlesystem": "1.0.0",
+    "com.unity.modules.physics": "1.0.0"
+  },
+  "author": {
+    "name": "orEEtheHAT"
+  }
+}

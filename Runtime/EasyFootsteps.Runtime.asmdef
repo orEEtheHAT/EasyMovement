@@ -1,0 +1,7 @@
+{
+  "name": "EasyFootsteps.Runtime",
+  "rootNamespace": "EasyFootsteps",
+  "references": [
+    "EasyFeedbacks.Runtime"
+  ]
+}
