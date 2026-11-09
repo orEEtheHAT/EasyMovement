@@ -6,9 +6,9 @@ EasyMovement combines a first-person player for Easy Character Movement 2 (ECM2)
 
 1. In Unity 6.3, import your licensed **Easy Character Movement 2** from the Unity Asset Store. Its `ECM2` runtime assembly is required to compile the first-person module. The package was tested with ECM2 1.4.3, without its examples.
 2. In Package Manager, use **Install package from git URL** to install EasyFeedbacks from `https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0`.
-3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v3.2.0`. Set **Active Input Handling** to **Input System Package (New)** or **Both**.
+3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v3.2.1`. Set **Active Input Handling** to **Input System Package (New)** or **Both**.
 
-Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v3.2.0"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
+Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v3.2.1"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
 
 Upgrading a custom 2.0 player? Before updating, note any customized gait IDs and ground probe depth from its `EcmFootstepSource`. Remove that component or its missing script entry and transfer the gait IDs to **First Person Character Controller → Movement States** and the probe depth to **ECM2 Motor and Ground Settings**. Steps automatically find a controller on the same object. For a separate source object, assign its player controller under **Motion Source**. The package sample keeps its asset GUID, including for prefab variants. Custom movement sources can implement `IFootstepMotionSource`.
 
