@@ -1,51 +1,48 @@
 # EasyMovement
 
-EasyMovement combines a first-person player for Easy Character Movement 2 (ECM2) with reusable footsteps for players and NPCs. The player provides its movement directly to the step controller. NPCs use a NavMesh source.
+EasyMovement is a first-person movement package for Unity 6.3 URP built on Easy Character Movement 2 (ECM2). It includes a player prefab, a separate Cinemachine scene camera, and surface-based footsteps for players and NavMesh NPCs. The footsteps use your EasyFeedbacks presets.
 
 ## Installation
 
-1. In Unity 6.3, import your licensed **Easy Character Movement 2** from the Unity Asset Store. Its `ECM2` runtime assembly is required to compile the first-person module. The package was tested with ECM2 1.4.3, without its examples.
-2. In Package Manager, use **Install package from git URL** to install EasyFeedbacks from `https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0`.
-3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v5.0.0`. Set **Active Input Handling** to **Input System Package (New)** or **Both**. EasyMovement 5 requires URP 17.3.0. Select a URP asset in the project’s Graphics or active Quality settings.
+1. Import **Easy Character Movement 2** from your Unity Asset Store purchases. EasyMovement uses the ECM2 runtime assembly. The player has been tested with ECM2 1.4.3.
+2. Open **Window → Package Manager → + → Install package from git URL** and install EasyFeedbacks:
+   ```text
+   https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0
+   ```
+3. Use the same command to install EasyMovement:
+   ```text
+   https://github.com/orEEtheHAT/EasyMovement.git#v5.0.1
+   ```
+4. Set **Active Input Handling** to **Input System Package (New)** or **Both**. EasyMovement declares URP 17.3.0 as a dependency. Select a URP asset in the project's Graphics settings or the active Quality level.
 
-Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v5.0.0"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
+## First scene
 
-Upgrading a custom 2.0 player? Before updating, note any customized gait IDs and ground probe depth from its `EcmFootstepSource`. Remove that component or its missing script entry and transfer the gait IDs to **First Person Character Controller → Movement States** and the probe depth to **ECM2 Motor and Ground Settings**. Steps automatically find a controller on the same object. For a separate source object, assign its player controller under **Motion Source**. The package sample keeps its asset GUID, including for prefab variants. Custom movement sources can implement `IFootstepMotionSource`.
+Find the prefabs under **Packages → EasyMovement → FirstPerson → Prefabs**.
 
-## First-person player
+- **FP_MainCamera_Sample** is the scene's output camera, with an AudioListener and a Cinemachine brain. Place it once per local view. If your scene already has a configured output camera, you can use it instead. The sample has post-processing and high-quality temporal anti-aliasing enabled. Its **FP_MainCamera_BlenderSettings** asset starts empty, so the brain uses a **Hard Out** blend of **0.5 s**.
+- **FP_Player_Sample** can be placed or spawned on a floor collider on the **Default** layer. Its three Cinemachine views follow the player's **Look Pivot**. Spawning a new player leaves the scene camera in place. Adjust the ECM2 collision mask if your ground uses another layer.
+- For footstep audio, place one EasyFeedbacks **AudioManager** at the scene root and assign a `FeedbackPreset` in **Character Step Controller → Step Feedback → Default Feedback**. The sample's **Step Sound Origin** is a child at the bottom of the capsule.
 
-In **Packages → EasyMovement → FirstPerson → Prefabs**, place **FP_MainCamera_Sample** in the scene once. It contains the tagged Unity camera, AudioListener and Cinemachine brain. A scene that already has these on its output camera can use that instead. Then place or spawn **FP_Player_Sample** at the desired position and rotation on a floor collider. Its three Cinemachine views follow the player's **Look Pivot** and drive the scene camera through the brain. Respawning the player keeps the scene camera alive.
+## Player controls and states
 
-The output camera has URP post-processing and high-quality temporal anti-aliasing enabled. Its Cinemachine brain uses **FP_MainCamera_BlenderSettings** in the same prefab folder. The asset starts with no overrides, so transitions use the brain’s default **Hard Out** blend of **0.5 s**.
+The **First Person Controls** input asset supports WASD and mouse, Space to jump, Shift to sprint, and C or Ctrl to crouch. On a gamepad, use the left stick to move, the right stick to look, the south button to jump, the east button to crouch and the left stick press to sprint. You can assign your own input asset and select a map containing `Move`, `Look`, `Jump`, `Sprint` and `Crouch`. Movement follows the player's body. Gameplay and UI modes control cursor capture.
 
-Movement uses the player's local forward and right. Mouse and stick look turn the body horizontally and tilt the eye-height **Look Pivot** vertically. Your gameplay and UI modes control cursor capture and visibility. When upgrading from 3.x, add a scene camera if you relied on the output inside the player. Existing look-target references migrate automatically.
+In **First Person Character Controller → Movement States**, each gait has a speed, camera, and step profile. The sample walks at **5 m/s**, sprints at **8 m/s**, and crouches at **2.5 m/s**. The sprint view uses a 65° field of view, and the crouch view lowers the camera by 0.65 m. Sprint and crouch can be disabled independently. The player inherits platform translation, rotation, and velocity. **ECM2 Motor and Ground Settings** exposes the other motor settings.
 
-The supplied **First Person Controls** input asset supports WASD and mouse, Space to jump, Shift to sprint, and C or Ctrl to crouch. Gamepad bindings include both sticks, south button to jump, left stick press to sprint and east button to crouch. To use another input asset, assign it to the input component and select the map containing `Move`, `Look`, `Jump`, `Sprint` and `Crouch`. The player consumes the ECM2 public API and does not need the ECM2 example input component.
-
-The starter collides with the Default layer and inherits platform translation, rotation and velocity. Adjust ECM2's collision mask for other ground layers. Its three player cameras accept Cinemachine impulses and use a 0.5-second Hard Out transition. The starter uses speeds of 5 m/s for walking, 8 m/s for sprinting, and 2.5 m/s for crouching. The sprint view uses a 65° field of view, and the crouch view lowers the camera by 0.65 m. Open **First Person Character Controller → Movement States**. Each gait shows its speed, camera and a dropdown populated from the character’s step states. You can turn sprint or crouch off here. Other ECM2 settings are under **ECM2 Motor and Ground Settings**.
-
-To add a gait such as `Injured`, create its profile in **Character Step Controller → Movement States**, then add it under **Custom States** on the player. Choose its speed, step profile and optional camera. In Play Mode, use **Test State in Play Mode** to try it. Gameplay can request it with `TrySetCustomState("Injured")`. UnityEvents can call `SetCustomState(string)` and `ClearCustomState()`. Crouching takes priority. A requested custom state resumes on returning to upright ground movement, and clears when the controller is disabled. A custom state without a camera uses the walk camera.
-
-Assign your EasyFeedbacks presets on the step controller. Under **Step Feedback → Step Sound Origin**, choose where a footstep preset plays. The sample assigns **Character/Footstep Origin** at the bottom of its capsule. Moving this child changes the playback point for distance-based, animation and explicit steps. The ground collider still selects the surface preset. An empty origin uses the step controller's transform. Place one EasyFeedbacks `AudioManager` at the scene root for audio. Feedback assets, surface materials and recordings belong to the consuming project.
+To add a gait such as `Injured`, first create it under **Character Step Controller → Movement States**. Then add it under **Custom States** on the player and choose its speed, step profile, and optional camera. Try it in Play Mode with **Test State in Play Mode**. Gameplay can call `TrySetCustomState("Injured")`. UnityEvents can call `SetCustomState(string)` and `ClearCustomState()`. Crouching takes priority, and the custom gait resumes when the player returns to upright ground movement. Disabling the controller clears it. A custom state without an assigned camera uses the walk camera.
 
 ## NoClip
 
-With **Allow NoClip** enabled, press **F8** or click the **right gamepad stick** to toggle collision-free flight of the player body. The `ToggleNoclip` action is optional on project input maps. Move forward/back along the look direction, strafe with Move, ascend with Jump, descend with Crouch and boost with Sprint. **Flight Speed** and **Boost Multiplier** are on the player inspector.
+With **Allow NoClip** enabled, **F8** or a click of the **right gamepad stick** toggles collision-free flight. The `ToggleNoclip` action is optional in your own input maps. Move forward or back along the look direction, strafe with Move, ascend with Jump, descend with Crouch and boost with Sprint. Tune **Flight Speed** and **Boost Multiplier** in the player inspector.
 
-Toggle again in open space to resume regular movement at the current position. In midair the character falls from there. If the capsule overlaps solid geometry, flight stays active until there is room to exit. Disabling the motor forcibly restores collisions. If blocked during disable, it first returns to the flight entry position. Use `TrySetNoclip(bool)` to check whether a transition succeeded, or bind `ToggleNoclip()` to a UnityEvent.
+Toggle again in open space to resume regular movement at the current position. In midair the character falls from there. If its capsule overlaps solid geometry, flight stays active until there is room to exit. Disabling the motor restores collisions and uses the flight entry position if the current position is blocked. Code can call `TrySetNoclip(bool)` to check whether a transition succeeded. Use `ToggleNoclip()` for a UnityEvent.
 
-## Footsteps on other characters
+## Footsteps
 
-For a NavMesh NPC, add **NavMeshFootstepSource** and **CharacterStepController** to the object with the `NavMeshAgent`. When the AI changes gait, set the source's `StateId`, for example `source.StateId = "Patrol";`. The source samples actual velocity and suspends steps while traversing off-mesh links. It probes for a surface on foot contact or an explicit ground query. Reading the step controller's `GroundCollider` multiple times in one motion sample reuses its first result. The NPC only needs the NavMesh components and the footsteps module.
+For a NavMesh NPC, add **NavMeshFootstepSource** and **CharacterStepController** to the object with the `NavMeshAgent`. The step controller finds a movement source on the same object by default. For a source on another object, assign it in **Motion Source**. The NavMesh source uses the agent's actual speed, suspends steps on off-mesh links, and probes for a surface at foot contact or when you query the ground collider.
 
-The step controller finds a movement source on the same object by default. You can also assign a specific source in the inspector. If an older EasyFootsteps prefab used Unity's built-in character motor, switch it to an ECM2 or NavMesh source when migrating to 2.0.
+Use **+** under **Step Timing → Movement States** to add a named profile. Each profile defines the step distance, feedback volume, head-bob multiplier, and movement amount for explicit steps. The starting distances are **1.95 m** for Walk, **2.25 m** for Sprint and **1.4 m** for Crouch. For example, add `Patrol` with a distance of 2.6 m and set `navMeshSource.StateId = "Patrol"` when the AI starts patrolling. Matching is case-insensitive. A missing state uses the first named profile. An empty list disables footsteps.
 
-Assign a default `FeedbackPreset` and any physics material overrides. A `FootstepSurface` on the ground collider or a parent takes priority over material entries. Unmatched surfaces use the default preset. For a NavMesh baked without physics colliders, the default preset is used.
+Assign a default `FeedbackPreset` and optional physics material overrides. A **FootstepSurface** on the ground collider or its parent takes priority over material entries. Unmatched surfaces and a NavMesh without ground colliders use the default preset. Moving the **Step Sound Origin** changes where the feedback plays. The ground collider still determines the surface. An unassigned origin uses the step controller's transform.
 
-In **Step Timing → Movement States**, use **+** to add a row, expand it and set a unique **State ID**. Each row controls step distance in metres, feedback volume, head-bob amplitude and movement amount for explicitly triggered steps. Remove unused states with **−**. Walk (1.95 m), Sprint (2.25 m) and Crouch (1.4 m) are the starting values. Upgrading from 1.0 preserves existing values and prefab overrides.
-
-For example, add a state named `Patrol` with a step distance of 2.6 m and set `navMeshSource.StateId = "Patrol"` from the AI when it starts patrolling. Custom motors pass the ID to `new FootstepMotion(speed, maxSpeed, stateId, ground)`. IDs match without regard to case. When a requested state is missing, the first named row supplies the settings. An empty list disables all steps.
-
-Use `CurrentStateId` and `StepEvent.StateId` to read the resolved ID, or call `PlayExternalStep("Patrol", -1)` for an explicit left step. The 1.0 enum API still supports its three built-in names and reports `MovementMode.Custom` for other states.
-
-Assign a child transform to **Head Bob Target** to apply the step curves. After the camera settles, the step controller releases the target and uses its current position as the starting point for the next walk. For animation-driven timing, select **External Events** and call `TriggerLeftStep` or `TriggerRightStep` from animation events on the character. Subscribe to `Stepped` for the movement mode, foot side, speed and surface on each step.
+Assign a child transform to **Head Bob Target** to apply the step curves. Once the camera settles, the next walk starts from the target's current position. For animation-driven timing, select **External Events** and call `TriggerLeftStep` or `TriggerRightStep` from animation events. For an explicit step, call `PlayExternalStep("Patrol", -1)`. Subscribe to `Stepped` for the state ID, foot side, speed and surface. `CurrentStateId` and `StepEvent.StateId` expose the resolved state.
