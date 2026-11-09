@@ -1,20 +1,30 @@
-# EasyFootsteps
+# EasyMovement
 
-Distance-based and animation-driven footsteps for Unity 6.3. Steps can play EasyFeedbacks presets and move an optional head-bob target.
+EasyMovement combines a first-person player for Easy Character Movement 2 (ECM2) with reusable footsteps for players and NPCs. The two modules communicate through a movement source. A NavMesh NPC uses the footsteps module directly.
 
 ## Installation
 
-1. In Package Manager, install EasyFeedbacks from `https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0`.
-2. Install EasyFootsteps from `https://github.com/orEEtheHAT/EasyFootsteps.git#v1.1.0` or select its `package.json` with **Install package from disk**.
-3. For presets with audio layers, add an EasyFeedbacks `AudioManager` to the scene.
+1. In Unity 6.3, import your licensed **Easy Character Movement 2** from the Unity Asset Store. Its `ECM2` runtime assembly is required to compile the first-person module. The package was tested with ECM2 1.4.3, without its examples.
+2. In Package Manager, use **Install package from git URL** to install EasyFeedbacks from `https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0`.
+3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v2.0.0`. Set **Active Input Handling** to **Input System Package (New)** or **Both**.
 
-## Setup
+Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v2.0.0"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
 
-Add `CharacterStepController` and a movement source to the moving character. The step controller finds a source on the same object at startup. You can also assign one explicitly.
+## First-person player
 
-- For a `NavMeshAgent`, use `NavMeshFootstepSource`. It samples the agent's actual velocity while on the mesh and suspends the cycle on off-mesh links.
-- For a built-in `CharacterController`, use `CharacterControllerFootstepSource`. Set its reference speed to the character's normal top speed. Both built-in sources expose `StateId` for choosing a configured state.
-- For another motor, derive a component from `FootstepMotionSource`. Return true from `TryGetGroundedMotion` while grounded and supply planar speed in metres per second, reference speed, movement mode and the ground collider.
+Drag **FirstPerson/Prefabs/First Person Player.prefab** into a scene with a floor collider. The prefab includes an ECM2 motor, a camera and AudioListener, a Cinemachine brain, three views, a movement source and a step controller. Use one active output camera/listener. A scene that already has its own output camera can use that camera and brain instead.
+
+The supplied **First Person Controls** input asset supports WASD and mouse, Space to jump, Shift to sprint, and C or Ctrl to crouch. Gamepad bindings include both sticks, south button to jump, left stick press to sprint and east button to crouch. To use another input asset, assign it to the input component and select the map containing `Move`, `Look`, `Jump`, `Sprint` and `Crouch`. The player consumes the ECM2 public API and does not need the ECM2 example input component.
+
+The starter uses speeds of 5 m/s for walking, 8 m/s for sprinting, and 2.5 m/s for crouching. The sprint view uses a 65° field of view, and the crouch view lowers the camera by 0.65 m. Select **EcmFootstepSource** to set the footstep IDs used for each gait. For other gait rules, override `GetGroundedStateId` in your own subclass.
+
+Assign your EasyFeedbacks presets on the step controller. For sound, place one EasyFeedbacks `AudioManager` at the scene root. Feedback assets, surface materials and recordings belong to the consuming project.
+
+## Footsteps on other characters
+
+For a NavMesh NPC, add **NavMeshFootstepSource** and **CharacterStepController** to the object with the `NavMeshAgent`. When the AI changes gait, set the source's `StateId`, for example `source.StateId = "Patrol";`. The source samples actual velocity and suspends steps while traversing off-mesh links. The NPC only needs the NavMesh components and the footsteps module.
+
+The step controller finds a movement source on the same object by default. You can also assign a specific source in the inspector. If an older EasyFootsteps prefab used Unity's built-in character motor, switch it to an ECM2 or NavMesh source when migrating to 2.0.
 
 Assign a default `FeedbackPreset` and any physics material overrides. A `FootstepSurface` on the ground collider or a parent takes priority over material entries. Unmatched surfaces use the default preset. For a NavMesh baked without physics colliders, the default preset is used.
 

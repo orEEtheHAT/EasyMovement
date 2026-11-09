@@ -1,0 +1,10 @@
+{
+  "name": "EasyMovement.FirstPerson",
+  "rootNamespace": "EasyMovement.FirstPerson",
+  "references": [
+    "ECM2",
+    "Unity.InputSystem",
+    "Unity.Cinemachine",
+    "EasyFootsteps.Runtime"
+  ]
+}
