@@ -75,7 +75,13 @@ namespace EasyFootsteps.Editor
         {
             serializedObject.Update();
             void Field(string path) => EditorGUILayout.PropertyField(serializedObject.FindProperty(path), true);
-            Field("_motionSource");
+            var source = serializedObject.FindProperty("_motionSource");
+            var previous = source.objectReferenceValue;
+            EditorGUI.BeginChangeCheck();
+            EditorGUILayout.PropertyField(source);
+            if (EditorGUI.EndChangeCheck() && source.objectReferenceValue is MonoBehaviour selected &&
+                selected is not IFootstepMotionSource)
+                source.objectReferenceValue = selected.GetComponent<IFootstepMotionSource>() as MonoBehaviour ?? previous;
             Field("_stepSourceMode");
             Field("_validateExternalSteps");
             Field("_minMoveSpeed");

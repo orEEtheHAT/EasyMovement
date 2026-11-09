@@ -70,7 +70,8 @@ namespace EasyFootsteps
 #pragma warning restore CS0649
 
         [Header("References")]
-        [SerializeField] private FootstepMotionSource _motionSource;
+        [Tooltip("Optional. Defaults to the footstep source on this GameObject.")]
+        [SerializeField] private MonoBehaviour _motionSource;
 
         [Header("Step Source")]
         [SerializeField] private StepSourceMode _stepSourceMode = StepSourceMode.DistanceBased;
@@ -175,14 +176,14 @@ namespace EasyFootsteps
         {
             _states = FootstepState.Defaults(false);
             _statesInitialized = true;
-            _motionSource = GetComponent<FootstepMotionSource>();
+            _motionSource = GetComponent<IFootstepMotionSource>() as MonoBehaviour;
         }
 
         private void Awake()
         {
             EnsureStateList();
-            if (!_motionSource)
-                _motionSource = GetComponent<FootstepMotionSource>();
+            if (!_motionSource || _motionSource is not IFootstepMotionSource)
+                _motionSource = GetComponent<IFootstepMotionSource>() as MonoBehaviour;
 
             CacheHeadBobStartPosition();
         }
@@ -312,7 +313,8 @@ namespace EasyFootsteps
 
         private bool RefreshState()
         {
-            if (!_motionSource || !_motionSource.isActiveAndEnabled || !_motionSource.TryGetGroundedMotion(out FootstepMotion motion))
+            if (!_motionSource || !_motionSource.isActiveAndEnabled || _motionSource is not IFootstepMotionSource source ||
+                !source.TryGetGroundedMotion(out FootstepMotion motion))
                 return false;
 
             GroundCollider = motion.Ground;
@@ -438,8 +440,8 @@ namespace EasyFootsteps
 
         private Collider FindGroundCollider()
         {
-            if (_motionSource && _motionSource.isActiveAndEnabled)
-                return _motionSource.FindGround();
+            if (_motionSource && _motionSource.isActiveAndEnabled && _motionSource is IFootstepMotionSource source)
+                return source.FindGround();
 
             Vector3 up = transform.up;
             return Physics.Raycast(transform.position + up * 0.35f, -up, out RaycastHit hit, 2f,

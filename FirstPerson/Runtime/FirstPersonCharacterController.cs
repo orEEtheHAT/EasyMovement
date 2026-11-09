@@ -1,3 +1,4 @@
+using EasyFootsteps;
 using ECM2;
 using Unity.Cinemachine;
 using UnityEngine;
@@ -5,7 +6,7 @@ using UnityEngine;
 namespace EasyMovement.FirstPerson
 {
     [DisallowMultipleComponent]
-    public sealed class FirstPersonCharacterController : Character, ICharacterMovementStateProvider
+    public class FirstPersonCharacterController : Character, IFootstepMotionSource
     {
         [Header("View")]
         public GameObject cameraTarget;
@@ -17,6 +18,13 @@ namespace EasyMovement.FirstPerson
         [Header("Sprint")]
         [SerializeField, Min(0f)] private float _maxSprintSpeed = 8f;
         [SerializeField, Range(0f, 1f)] private float _minSprintInput = 0.1f;
+
+        [Header("Footsteps")]
+        [SerializeField] private string walkState = "Walk";
+        [SerializeField] private string sprintState = "Sprint";
+        [SerializeField] private string crouchState = "Crouch";
+        [Tooltip("Distance below the pivot to search if ECM2 has no ground collider for an external step.")]
+        [SerializeField, Min(0f)] private float groundProbeDepth = 2f;
 
         private bool sprintRequested;
         private bool sprinting;
@@ -33,6 +41,31 @@ namespace EasyMovement.FirstPerson
         public void StopSprinting() => sprintRequested = false;
 
         public override float GetMaxSpeed() => sprinting ? MaxSprintSpeed : base.GetMaxSpeed();
+
+        protected virtual string GetGroundedStateId()
+        {
+            if (IsCrouched()) return crouchState;
+            return sprinting ? sprintState : walkState;
+        }
+
+        public bool TryGetGroundedMotion(out FootstepMotion motion)
+        {
+            motion = default;
+            if (!isActiveAndEnabled || !characterMovement || !IsWalking() || !IsGrounded()) return false;
+
+            float speed = Vector3.ProjectOnPlane(GetVelocity(), GetUpVector()).magnitude;
+            motion = new FootstepMotion(speed, GetMaxSpeed(), GetGroundedStateId(), characterMovement.groundCollider);
+            return true;
+        }
+
+        public Collider FindGround()
+        {
+            if (characterMovement && characterMovement.groundCollider) return characterMovement.groundCollider;
+            // The ECM2 transform cache is initialized in play mode. Preview instances also support external steps.
+            Transform pivot = gameObject.transform;
+            int layers = characterMovement ? characterMovement.collisionLayers.value : Physics.DefaultRaycastLayers;
+            return FootstepGround.Probe(pivot.position, pivot.up, layers, groundProbeDepth);
+        }
 
         public void AddControlYawInput(float degrees) => AddYawInput(degrees);
 

@@ -27,25 +27,18 @@ namespace EasyFootsteps
         }
     }
 
-    public abstract class FootstepMotionSource : MonoBehaviour
+    public interface IFootstepMotionSource
     {
-        [Tooltip("Layers used to find the surface under the character.")]
-        [SerializeField] protected LayerMask groundLayers = Physics.DefaultRaycastLayers;
-        [Tooltip("How far below the character pivot to look for a surface.")]
-        [SerializeField, Min(0f)] private float groundProbeDepth = 2f;
+        bool TryGetGroundedMotion(out FootstepMotion motion);
+        Collider FindGround();
+    }
 
-        public abstract bool TryGetGroundedMotion(out FootstepMotion motion);
-
-        public virtual Collider FindGround()
+    public static class FootstepGround
+    {
+        public static Collider Probe(Vector3 pivot, Vector3 up, LayerMask layers, float depth)
         {
-            return ProbeGround(transform.up, groundLayers);
-        }
-
-        protected Collider ProbeGround(Vector3 up, LayerMask layers)
-        {
-            // Starting inside the character avoids hitting its own capsule.
-            Vector3 origin = transform.position + up * 0.35f;
-            return Physics.Raycast(origin, -up, out RaycastHit hit, groundProbeDepth + 0.35f,
+            Vector3 origin = pivot + up * 0.35f;
+            return Physics.Raycast(origin, -up, out RaycastHit hit, depth + 0.35f,
                 layers, QueryTriggerInteraction.Ignore) ? hit.collider : null;
         }
     }

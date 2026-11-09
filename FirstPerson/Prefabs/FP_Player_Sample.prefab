@@ -351,7 +351,6 @@ GameObject:
   - component: {fileID: 4410062314178600829}
   - component: {fileID: 546872251988531180}
   - component: {fileID: 5609835606174930227}
-  - component: {fileID: 5388599444210711590}
   - component: {fileID: 7012971544792881634}
   m_Layer: 0
   m_Name: Character
@@ -527,6 +526,10 @@ MonoBehaviour:
   lockCursorOnStart: 1
   _maxSprintSpeed: 8
   _minSprintInput: 0.1
+  walkState: Walk
+  sprintState: Sprint
+  crouchState: Crouch
+  groundProbeDepth: 2
 --- !u!114 &5609835606174930227
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -547,26 +550,6 @@ MonoBehaviour:
   gamepadLookSpeed: 160
   minPitch: -80
   maxPitch: 80
---- !u!114 &5388599444210711590
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5492376730864550367}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7aae9899cad38fd43b95fe9faad98de6, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: EasyMovement.FirstPerson::EasyMovement.FirstPerson.EcmFootstepSource
-  groundLayers:
-    serializedVersion: 2
-    m_Bits: 4294967291
-  groundProbeDepth: 2
-  character: {fileID: 546872251988531180}
-  walkState: Walk
-  sprintState: Sprint
-  crouchState: Crouch
 --- !u!114 &7012971544792881634
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -579,7 +562,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c6666b14bacb498abe98b696827160f8, type: 3}
   m_Name:
   m_EditorClassIdentifier: EasyFootsteps.Runtime::EasyFootsteps.CharacterStepController
-  _motionSource: {fileID: 5388599444210711590}
+  _motionSource: {fileID: 546872251988531180}
   _stepSourceMode: 0
   _validateExternalSteps: 1
   _minMoveSpeed: 0.2
@@ -843,7 +826,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6459544806635941022}
   m_Layer: 0
-  m_Name: First Person Player
+  m_Name: FP_Player_Sample
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

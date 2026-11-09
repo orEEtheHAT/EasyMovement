@@ -1,6 +1,6 @@
 {
   "name": "com.oreethehat.easy-movement",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "displayName": "EasyMovement",
   "description": "First-person player controls for ECM2 and surface-based footsteps for ECM2 and NavMeshAgent.",
   "unity": "6000.3",

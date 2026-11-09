@@ -5,14 +5,14 @@ using UnityEngine;
 
 namespace EasyFootsteps.Editor
 {
-    [CustomEditor(typeof(SelectableFootstepMotionSource), true)]
-    public sealed class SelectableFootstepMotionSourceEditor : UnityEditor.Editor
+    [CustomEditor(typeof(NavMeshFootstepSource))]
+    public sealed class NavMeshFootstepSourceEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
             DrawPropertiesExcluding(serializedObject, "m_Script", "stateId", "mode");
-            var source = (SelectableFootstepMotionSource)target;
+            var source = (NavMeshFootstepSource)target;
             var controller = source.GetComponent<CharacterStepController>();
             var id = serializedObject.FindProperty("stateId");
             if (controller == null)

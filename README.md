@@ -1,22 +1,24 @@
 # EasyMovement
 
-EasyMovement combines a first-person player for Easy Character Movement 2 (ECM2) with reusable footsteps for players and NPCs. The two modules communicate through a movement source. A NavMesh NPC uses the footsteps module directly.
+EasyMovement combines a first-person player for Easy Character Movement 2 (ECM2) with reusable footsteps for players and NPCs. The player provides its movement directly to the step controller. NPCs use a NavMesh source.
 
 ## Installation
 
 1. In Unity 6.3, import your licensed **Easy Character Movement 2** from the Unity Asset Store. Its `ECM2` runtime assembly is required to compile the first-person module. The package was tested with ECM2 1.4.3, without its examples.
 2. In Package Manager, use **Install package from git URL** to install EasyFeedbacks from `https://github.com/orEEtheHAT/Easy-Feedbacks.git#v1.7.0`.
-3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v2.0.0`. Set **Active Input Handling** to **Input System Package (New)** or **Both**.
+3. Install `https://github.com/orEEtheHAT/EasyMovement.git#v3.0.0`. Set **Active Input Handling** to **Input System Package (New)** or **Both**.
 
-Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v2.0.0"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
+Upgrading from standalone EasyFootsteps 1.x? Replace its project manifest entry with `"com.oreethehat.easy-movement": "https://github.com/orEEtheHAT/EasyMovement.git#v3.0.0"` in the same edit. Existing footsteps scripts keep their GUIDs, namespace and assembly name. Both distributions contain these components, so install only one.
+
+Upgrading a custom 2.0 player? Before updating, note any customized gait IDs and ground probe depth from its `EcmFootstepSource`. Remove that component or its missing script entry and transfer those values to **First Person Character Controller → Footsteps**. Steps automatically find a controller on the same object. For a separate source object, assign its player controller under **Motion Source**. The package sample keeps its asset GUID, including for prefab variants. Custom movement sources can implement `IFootstepMotionSource`.
 
 ## First-person player
 
-Drag **FirstPerson/Prefabs/First Person Player.prefab** into a scene with a floor collider. The prefab includes an ECM2 motor, a camera and AudioListener, a Cinemachine brain, three views, a movement source and a step controller. Use one active output camera/listener. A scene that already has its own output camera can use that camera and brain instead.
+Drag **FirstPerson/Prefabs/FP_Player_Sample.prefab** into a scene with a floor collider. The prefab includes an ECM2 motor, a camera and AudioListener, a Cinemachine brain, three views and a step controller. Use one active output camera/listener. A scene that already has its own output camera can use that camera and brain instead.
 
 The supplied **First Person Controls** input asset supports WASD and mouse, Space to jump, Shift to sprint, and C or Ctrl to crouch. Gamepad bindings include both sticks, south button to jump, left stick press to sprint and east button to crouch. To use another input asset, assign it to the input component and select the map containing `Move`, `Look`, `Jump`, `Sprint` and `Crouch`. The player consumes the ECM2 public API and does not need the ECM2 example input component.
 
-The starter uses speeds of 5 m/s for walking, 8 m/s for sprinting, and 2.5 m/s for crouching. The sprint view uses a 65° field of view, and the crouch view lowers the camera by 0.65 m. Select **EcmFootstepSource** to set the footstep IDs used for each gait. For other gait rules, override `GetGroundedStateId` in your own subclass.
+The starter uses speeds of 5 m/s for walking, 8 m/s for sprinting, and 2.5 m/s for crouching. The sprint view uses a 65° field of view, and the crouch view lowers the camera by 0.65 m. Set the walk, sprint and crouch IDs under **First Person Character Controller → Footsteps**. The controller supplies the current gait, ground collider and speed directly. To change gait rules in a subclass, override `GetGroundedStateId()`.
 
 Assign your EasyFeedbacks presets on the step controller. For sound, place one EasyFeedbacks `AudioManager` at the scene root. Feedback assets, surface materials and recordings belong to the consuming project.
 
