@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using EasyFeedbacks;
 using UnityEditor;
 using UnityEditorInternal;
 using UnityEngine;
@@ -122,6 +123,12 @@ namespace EasyFootsteps.Editor
                 EditorGUI.indentLevel++;
                 Field("_stepSoundOrigin");
                 Field("_defaultFeedback");
+                Field("_contextProvider");
+                var provider = serializedObject.FindProperty("_contextProvider").objectReferenceValue as MonoBehaviour;
+                if (provider && provider is not IFeedbackContextProvider)
+                    EditorGUILayout.HelpBox("Context Provider must implement IFeedbackContextProvider. Assign the owning player's Player Feedback Context, or clear the field for legacy playback.", MessageType.Error);
+                else if (provider && !provider.isActiveAndEnabled)
+                    EditorGUILayout.HelpBox("Enable the Context Provider and its GameObject to route footsteps to this player. While inactive, footsteps use legacy playback, including Gamepad.current fallback.", MessageType.Warning);
                 Field("_surfaces");
                 EditorGUI.indentLevel--;
             }

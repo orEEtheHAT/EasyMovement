@@ -2,7 +2,8 @@
   "name": "EasyFootsteps.Editor",
   "rootNamespace": "EasyFootsteps.Editor",
   "references": [
-    "EasyFootsteps.Runtime"
+    "EasyFootsteps.Runtime",
+    "EasyFeedbacks.Runtime"
   ],
   "includePlatforms": [
     "Editor"

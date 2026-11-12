@@ -1,12 +1,12 @@
 {
   "name": "com.oreethehat.easy-movement",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "hideInEditor": false,
   "displayName": "EasyMovement",
   "description": "First-person movement for Unity 6.3 URP with ECM2, Cinemachine cameras and surface-based footsteps for players and NavMesh NPCs.",
   "unity": "6000.3",
   "dependencies": {
-    "com.oreethehat.easy-feedbacks": "1.7.0",
+    "com.oreethehat.easy-feedbacks": "1.8.0",
     "com.unity.modules.ai": "1.0.0",
     "com.unity.modules.animation": "1.0.0",
     "com.unity.modules.audio": "1.0.0",

@@ -109,6 +109,8 @@ namespace EasyFootsteps
         [SerializeField] private Transform _stepSoundOrigin;
         [Tooltip("Used if no surface override or physics material has a feedback assigned.")]
         [SerializeField] private FeedbackPreset _defaultFeedback;
+        [Tooltip("Optional active IFeedbackContextProvider, such as the owning player's feedback context. Empty keeps legacy unaddressed playback.")]
+        [SerializeField] private MonoBehaviour _contextProvider;
         [SerializeField] private SurfaceFeedback[] _surfaces = Array.Empty<SurfaceFeedback>();
         [SerializeField, HideInInspector, Min(0f)] private float _walkVolume = 0.75f;
         [SerializeField, HideInInspector, Min(0f)] private float _sprintVolume = 1f;
@@ -129,6 +131,8 @@ namespace EasyFootsteps
         private Collider _groundCollider;
 
         public event Action<StepEvent> Stepped;
+
+        public MonoBehaviour ContextProvider { get => _contextProvider; set => _contextProvider = value; }
 
         public StepSourceMode SourceMode => _stepSourceMode;
         private FootstepState _activeState;
@@ -581,7 +585,10 @@ namespace EasyFootsteps
             {
                 float volume = _activeState.feedbackVolume;
                 Transform origin = _stepSoundOrigin ? _stepSoundOrigin : transform;
-                FeedbackService.Play(preset, FeedbackContext.From(origin, null, 1f, volume, Vector3.one));
+                var context = FeedbackContext.From(origin, null, 1f, volume, Vector3.one);
+                if (_contextProvider && _contextProvider.isActiveAndEnabled && _contextProvider is IFeedbackContextProvider provider)
+                    context = provider.Prepare(context);
+                FeedbackService.Play(preset, context);
             }
         }
 

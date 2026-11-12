@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using EasyFootsteps;
 using ECM2;
 using Unity.Cinemachine;
@@ -8,7 +9,7 @@ using UnityEngine.Serialization;
 namespace EasyMovement.FirstPerson
 {
     [DisallowMultipleComponent]
-    public class FirstPersonCharacterController : Character, IFootstepMotionSource
+    public partial class FirstPersonCharacterController : Character, IFootstepMotionSource
     {
         [Serializable]
         private sealed class CustomState
@@ -51,6 +52,109 @@ namespace EasyMovement.FirstPerson
         private CustomState requestedState;
         private CinemachineCamera lastView;
         private bool refreshSettings;
+
+        private readonly List<InputBlock> inputBlocks = new List<InputBlock>();
+
+        /// <summary>Whether manual input readers must yield. Scripted motor commands remain available.</summary>
+        public bool InputBlocked
+        {
+            get
+            {
+                RemoveInactiveInputBlocks();
+                return inputBlocks.Count != 0;
+            }
+        }
+
+        /// <summary>Raised only when the effective input block changes.</summary>
+        public event Action<bool> InputBlockedChanged;
+        internal event Action ManualInputReset;
+
+        /// <summary>
+        /// Blocks manual readers until this independent handle is disposed or its owner becomes inactive.
+        /// A Behaviour must be enabled; a GameObject or Component must be active in the hierarchy.
+        /// Other Unity objects remain owners until destroyed. Inactive owners/controllers return an empty handle.
+        /// Disabling the controller releases all handles; callers acquire again after enabling it.
+        /// This does not stop or reset the motor's direction, velocity, rotation or movement mode.
+        /// </summary>
+        public IDisposable AcquireInputBlock(UnityEngine.Object owner)
+        {
+            if (!owner) throw new ArgumentNullException(nameof(owner));
+            RemoveInactiveInputBlocks();
+            if (!isActiveAndEnabled || !IsInputBlockOwnerActive(owner)) return InputBlock.Empty;
+            var block = new InputBlock(this, owner);
+            bool wasBlocked = inputBlocks.Count != 0;
+            inputBlocks.Add(block);
+            if (!wasBlocked) InputBlockedChanged?.Invoke(true);
+            return block;
+        }
+
+        private sealed class InputBlock : IDisposable
+        {
+            internal static readonly InputBlock Empty = new InputBlock(null, null);
+            internal FirstPersonCharacterController Controller;
+            internal UnityEngine.Object Owner;
+
+            internal InputBlock(FirstPersonCharacterController controller, UnityEngine.Object owner)
+            {
+                Controller = controller;
+                Owner = owner;
+            }
+
+            public void Dispose()
+            {
+                var controller = Controller;
+                if (controller) controller.ReleaseInputBlock(this);
+                Controller = null;
+                Owner = null;
+            }
+        }
+
+        private static bool IsInputBlockOwnerActive(UnityEngine.Object owner)
+        {
+            if (!owner) return false;
+            if (owner is Behaviour behaviour) return behaviour.isActiveAndEnabled;
+            if (owner is GameObject gameObject) return gameObject.activeInHierarchy;
+            if (owner is Component component) return component.gameObject.activeInHierarchy;
+            return true;
+        }
+
+        private void ReleaseInputBlock(InputBlock block)
+        {
+            if (!inputBlocks.Remove(block)) return;
+            block.Controller = null;
+            block.Owner = null;
+            if (inputBlocks.Count == 0) InputBlockedChanged?.Invoke(false);
+        }
+
+        private void RemoveInactiveInputBlocks()
+        {
+            bool wasBlocked = inputBlocks.Count != 0;
+            for (int i = inputBlocks.Count - 1; i >= 0; i--)
+            {
+                var block = inputBlocks[i];
+                if (IsInputBlockOwnerActive(block.Owner)) continue;
+                block.Controller = null;
+                block.Owner = null;
+                inputBlocks.RemoveAt(i);
+            }
+            if (wasBlocked && inputBlocks.Count == 0) InputBlockedChanged?.Invoke(false);
+        }
+
+        private void ClearInputBlocks()
+        {
+            if (inputBlocks.Count == 0) return;
+            foreach (var block in inputBlocks)
+            {
+                block.Controller = null;
+                block.Owner = null;
+            }
+            inputBlocks.Clear();
+            InputBlockedChanged?.Invoke(false);
+        }
+
+        // Use Update as well as the getter so inactive-owner cleanup continues when simulation is paused.
+        // Derived controllers overriding Update must call base.Update().
+        protected virtual void Update() => RemoveInactiveInputBlocks();
 
         private Gait CurrentGait
         {
@@ -297,6 +401,8 @@ namespace EasyMovement.FirstPerson
 
         protected override void OnDisable()
         {
+            ManualInputReset?.Invoke();
+            ClearInputBlocks();
             if (IsNoclipActive && characterMovement)
             {
                 // A disabled motor cannot keep flying out of a wall. Restore a valid position before enabling collisions.

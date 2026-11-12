@@ -20,8 +20,14 @@ namespace EasyMovement.FirstPerson
         public float maxPitch = 80f;
 
         private InputAction move, look, jump, crouch, sprint, toggleNoclip;
-        private readonly List<InputAction> enabledHere = new List<InputAction>(5);
+        private readonly List<InputAction> enabledHere = new List<InputAction>(6);
         private bool holdingJump, holdingCrouch, holdingSprint;
+        private bool waitForJumpRelease, waitForCrouchRelease, waitForSprintRelease, waitForNoclipRelease;
+        private bool wroteMovement;
+        private Vector3 lastMovement;
+
+        private bool CanReadInput => isActiveAndEnabled && _character &&
+                                     _character.isActiveAndEnabled && !_character.InputBlocked;
 
         public FirstPersonCharacterController firstPersonCharacter => _character;
         public InputAction lookInputAction => look;
@@ -48,6 +54,11 @@ namespace EasyMovement.FirstPerson
 
         private void Connect()
         {
+            if (_character)
+            {
+                _character.InputBlockedChanged += OnInputBlockedChanged;
+                _character.ManualInputReset += OnManualInputReset;
+            }
             var map = _inputActionsAsset ? _inputActionsAsset.FindActionMap(actionMap) : null;
             if (map == null) return;
             move = map.FindAction("Move");
@@ -59,6 +70,7 @@ namespace EasyMovement.FirstPerson
             if (toggleNoclip != null)
             {
                 toggleNoclip.performed += OnNoclipToggle;
+                toggleNoclip.canceled += OnNoclipCanceled;
                 EnableIfNeeded(toggleNoclip);
             }
             Listen(jump);
@@ -66,6 +78,8 @@ namespace EasyMovement.FirstPerson
             Listen(sprint);
             EnableIfNeeded(move);
             EnableIfNeeded(look);
+            // Initial-state callbacks must not replay a button already held while this reader was disabled.
+            waitForJumpRelease = waitForCrouchRelease = waitForSprintRelease = waitForNoclipRelease = true;
         }
 
         private void Listen(InputAction action)
@@ -92,56 +106,125 @@ namespace EasyMovement.FirstPerson
 
         private void Disconnect()
         {
+            if (_character)
+            {
+                _character.InputBlockedChanged -= OnInputBlockedChanged;
+                _character.ManualInputReset -= OnManualInputReset;
+            }
             Unlisten(jump);
             Unlisten(crouch);
             Unlisten(sprint);
-            if (toggleNoclip != null) toggleNoclip.performed -= OnNoclipToggle;
+            if (toggleNoclip != null)
+            {
+                toggleNoclip.performed -= OnNoclipToggle;
+                toggleNoclip.canceled -= OnNoclipCanceled;
+            }
             foreach (var action in enabledHere) action.Disable();
             enabledHere.Clear();
-            if (_character)
-            {
-                if (holdingJump) _character.StopJumping();
-                if (holdingCrouch) _character.UnCrouch();
-                if (holdingSprint) _character.StopSprinting();
+            ReleaseButtons();
+            // A blocked reader never writes even zero: the active scripted provider owns the motor.
+            // Outside a handoff, clear only a direction that still matches this reader's last write.
+            if (_character && !_character.InputBlocked && wroteMovement &&
+                _character.GetMovementDirection() == lastMovement)
                 _character.SetMovementDirection(Vector3.zero);
-            }
-            holdingJump = holdingCrouch = holdingSprint = false;
+            wroteMovement = false;
             move = look = jump = crouch = sprint = toggleNoclip = null;
         }
 
         private void OnNoclipToggle(InputAction.CallbackContext context)
         {
-            if (_character && _character.isActiveAndEnabled) _character.ToggleNoclip();
+            if (CanReadInput && !waitForNoclipRelease) _character.ToggleNoclip();
+        }
+
+        private void OnNoclipCanceled(InputAction.CallbackContext context) => waitForNoclipRelease = false;
+
+        private void OnInputBlockedChanged(bool blocked)
+        {
+            if (blocked)
+            {
+                ReleaseButtons();
+                wroteMovement = false;
+            }
+            RequireHeldButtonsToRelease();
+        }
+
+        private void OnManualInputReset()
+        {
+            ReleaseButtons();
+            wroteMovement = false;
+            RequireHeldButtonsToRelease();
+        }
+
+        private void RequireHeldButtonsToRelease()
+        {
+            waitForJumpRelease = jump?.IsPressed() == true;
+            waitForCrouchRelease = crouch?.IsPressed() == true;
+            waitForSprintRelease = sprint?.IsPressed() == true;
+            waitForNoclipRelease = toggleNoclip?.IsPressed() == true;
+        }
+
+        private void ReleaseButtons()
+        {
+            if (_character)
+            {
+                if (holdingJump) _character.StopJumping();
+                if (holdingCrouch) _character.UnCrouch();
+                if (holdingSprint) _character.StopSprinting();
+            }
+            holdingJump = holdingCrouch = holdingSprint = false;
         }
 
         private void OnButton(InputAction.CallbackContext context)
         {
-            if (!_character) return;
             bool pressed = context.started;
+            if (!CanReadInput)
+            {
+                // Track the physical release, but never cancel a scripted provider's button intents.
+                if (context.action == jump) waitForJumpRelease = pressed;
+                else if (context.action == crouch) waitForCrouchRelease = pressed;
+                else if (context.action == sprint) waitForSprintRelease = pressed;
+                return;
+            }
             if (context.action == jump)
             {
+                if (waitForJumpRelease) { if (!pressed) waitForJumpRelease = false; return; }
+                if (!pressed && !holdingJump) return;
                 holdingJump = pressed && !_character.IsNoclipActive;
                 if (_character.IsNoclipActive) return;
                 if (pressed) _character.Jump(); else _character.StopJumping();
             }
             else if (context.action == crouch)
             {
+                if (waitForCrouchRelease) { if (!pressed) waitForCrouchRelease = false; return; }
+                if (!pressed && !holdingCrouch) return;
                 holdingCrouch = pressed && !_character.IsNoclipActive;
                 if (_character.IsNoclipActive) return;
                 if (pressed) _character.Crouch(); else _character.UnCrouch();
             }
             else if (context.action == sprint)
             {
+                if (waitForSprintRelease) { if (!pressed) waitForSprintRelease = false; return; }
+                if (!pressed && !holdingSprint) return;
                 holdingSprint = pressed;
                 if (pressed) _character.Sprint(); else _character.StopSprinting();
             }
         }
 
-        public Vector2 GetLookInput() => look?.ReadValue<Vector2>() ?? Vector2.zero;
+        public Vector2 GetLookInput() => CanReadInput ? look?.ReadValue<Vector2>() ?? Vector2.zero : Vector2.zero;
 
         private void Update()
         {
-            if (!_character || !_character.isActiveAndEnabled) return;
+            if (!CanReadInput)
+            {
+                ReleaseButtons();
+                RequireHeldButtonsToRelease();
+                wroteMovement = false;
+                return;
+            }
+            if (jump?.IsPressed() != true) waitForJumpRelease = false;
+            if (crouch?.IsPressed() != true) waitForCrouchRelease = false;
+            if (sprint?.IsPressed() != true) waitForSprintRelease = false;
+            if (toggleNoclip?.IsPressed() != true) waitForNoclipRelease = false;
             Vector2 axes = move?.ReadValue<Vector2>() ?? Vector2.zero;
             Vector2 delta = GetLookInput();
             if (look?.activeControl?.device is Gamepad)
@@ -155,13 +238,16 @@ namespace EasyMovement.FirstPerson
             if (_character.IsNoclipActive)
             {
                 Transform aim = _character.LookPivot ? _character.LookPivot : body;
-                float vertical = (jump?.IsPressed() == true ? 1f : 0f) - (crouch?.IsPressed() == true ? 1f : 0f);
-                _character.SetMovementDirection(body.right * axes.x + aim.forward * axes.y + body.up * vertical);
+                float vertical = (!waitForJumpRelease && jump?.IsPressed() == true ? 1f : 0f) -
+                                 (!waitForCrouchRelease && crouch?.IsPressed() == true ? 1f : 0f);
+                lastMovement = body.right * axes.x + aim.forward * axes.y + body.up * vertical;
             }
             else
             {
-                _character.SetMovementDirection(body.TransformDirection(new Vector3(axes.x, 0f, axes.y)));
+                lastMovement = body.TransformDirection(new Vector3(axes.x, 0f, axes.y));
             }
+            _character.SetMovementDirection(lastMovement);
+            wroteMovement = true;
         }
     }
 }
